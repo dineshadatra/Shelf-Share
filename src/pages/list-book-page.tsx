@@ -127,7 +127,7 @@ export default function ListBookPage() {
     const values=[price3,price7,price15,price30,customDaily].map(x=>x.trim()?Number(x):0);
     if(!values.some(x=>Number.isFinite(x)&&x>0)||values.some(x=>!Number.isFinite(x)||x<0)){setError("Enter at least one positive rental price. Negative prices are not allowed.");return;}
     if((minDays||maxDays)&&(!customDaily||!minDays||!maxDays||Number(minDays)<1||Number(maxDays)<Number(minDays)||Number(maxDays)>90)){setError("Custom pricing needs a daily rate and a valid 1–90 day range.");return;}
-    if(submit&&photos.length+savedImages.length<2){setError("At least two actual photos are required before submission.");return;}
+    if(submit&&photos.length+savedImages.filter(image=>image.moderation_status==="pending_review"||image.moderation_status==="approved").length<2){setError("At least two actual photos are required before submission.");return;}
     setBusy(true);
     try{
       const authors=title.authors.map(x=>x.trim()).filter(Boolean);
@@ -141,7 +141,7 @@ export default function ListBookPage() {
       });
       if(saveError)throw saveError;
       const id=savedId as string;setCopyId(id);
-      let imageCount=savedImages.length;
+      let imageCount=savedImages.filter(image=>image.moderation_status==="pending_review"||image.moderation_status==="approved").length;
       for(let index=0;index<photos.length;index++){
         const file=photos[index];const blob=await sanitiseListingPhoto(file);
         const key=user.id+"/"+id+"/"+crypto.randomUUID()+".jpg";
