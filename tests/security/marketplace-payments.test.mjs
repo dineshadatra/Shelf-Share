@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -18,7 +18,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../src/pages/book-details-page.tsx"),
   read("../../src/pages/rental-history-page.tsx"),
   read("../../src/components/marketplace/qr-code-scanner.tsx"),
-  read("../../supabase/config.toml")
+  read("../../supabase/config.toml"),
+  read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -235,6 +236,27 @@ test("frontend renders local QR and supports camera scanner with OTP fallback", 
   assert.match(rentals, /Scan participant QR/);
   assert.match(rentals, /OTP fallback/);
   assert.match(rentals, /provider-confirmed payment/);
+});
+
+test("Reader checkout excludes the Owner commission and supports safe recovery after browser closure", () => {
+  const tax = functionBody(finance, "public.record_booking_tax_calculation(");
+  assert.match(tax, /total_due_paise=rent_subtotal_paise\+p_tax_paise/);
+  assert.doesNotMatch(tax, /total_due_paise=rent_subtotal_paise\+platform_fee_paise/);
+  assert.match(rentals, /Owner-side commission \(10%, withheld from rent\)/);
+  assert.match(bookDetails, /10% commission is withheld from Owner proceeds/);
+  assert.match(workspace, /'checkout_url',case when b.reader_id=v_user then/);
+  assert.match(rentals, /Continue secure provider checkout/);
+});
+
+test("provider-held deposits require a persistent provider reference before showing or releasing funds", () => {
+  const release = functionBody(disputes, "public.request_deposit_release(");
+  const position = functionBody(disputes, "public.get_my_deposit_positions(");
+  const depositEvent = functionBody(financeEvents, "public.apply_verified_deposit_event(");
+  assert.match(release, /v_deposit\.provider_reference is null/);
+  assert.match(position, /d\.provider_reference is not null/);
+  assert.match(depositEvent, /p_provider_reference is null/);
+  assert.match(depositEvent, /deposit\.dispute_hold/);
+  assert.match(depositEvent, /deposit\.claim_held/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
