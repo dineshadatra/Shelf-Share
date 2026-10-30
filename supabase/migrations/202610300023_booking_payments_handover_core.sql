@@ -761,12 +761,13 @@ declare v_user uuid:=auth.uid(); v_earning public.owner_earnings%rowtype;
 begin
   if v_user is null then raise exception 'Authentication required'; end if;
   if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then raise exception 'Payout idempotency key required'; end if;
-  select id into v_payout from public.payouts where idempotency_key=p_idempotency_key;
-  if v_payout is not null then return v_payout; end if;
   select * into v_earning from public.owner_earnings where id=p_earning_id and owner_id=v_user for update;
   if not found or v_earning.status<>'eligible' or v_earning.settlement_calculated_at is null
     or v_earning.settlement_policy_version is null or v_earning.settlement_approved_by is null then
     raise exception 'Owner earning requires verified collection and an approved final settlement calculation'; end if;
+  select id into v_payout from public.payouts
+    where idempotency_key=p_idempotency_key and owner_earning_id=p_earning_id and owner_id=v_user;
+  if v_payout is not null then return v_payout; end if;
   select * into v_approval from public.payment_provider_approvals where provider_code=p_provider and enabled_for_rent
     and marketplace_model='peer_to_peer_physical_book_rental' and supports_vendor_onboarding and supports_split_settlement
     and supports_delayed_transfer and supports_reconciliation and legal_approval_reference is not null
