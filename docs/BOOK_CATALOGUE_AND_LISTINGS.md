@@ -35,7 +35,7 @@ An owner must have an active account, completed identity verification and server
 9. Approval makes it discoverable only while its owner remains active, verified and age eligible. A future verification/account restriction pauses existing listings through the existing verification-loss triggers.
 10. An owner can pause an approved listing. Editing a rejected or paused copy returns it to draft; it must be resubmitted and reviewed again.
 
-The server, not the browser, validates owner status, the declaration, required photos, location, active prices and listing state. The browser cannot write moderation status or mark a listing approved.
+The server, not the browser, validates owner status, an explicit declaration-acceptance parameter, required photos, location, active prices and listing state. The earlier six-parameter save RPC is renamed and its authenticated execute permission is revoked; the active seven-parameter RPC rejects calls unless declaration acceptance is explicitly true. The browser cannot write moderation status or mark a listing approved.
 
 ## 3. Photos and purchase evidence
 
@@ -110,6 +110,7 @@ Apply database migrations in order, including the prior identity/security migrat
 - `202610300015_waitlist_reservation_release.sql`
 - `202610300016_catalogue_moderation_photo_and_bundle_fixes.sql`
 - `202610300017_waitlist_current_availability_check.sql`
+- `202610300018_backend_owner_declaration_acceptance.sql`
 
 Deploy the `catalogue-api` Edge Function and set the `APP_ORIGIN` secret to the deployed ShelfShare frontend origin. Supabase URL, anon key and service-role key are runtime-provided Edge Function secrets; only the URL and anon key belong in Vite's public environment.
 
