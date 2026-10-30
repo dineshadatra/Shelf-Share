@@ -34,7 +34,8 @@
     "tailwind-merge": "^3.3.1",
     "zod": "^4.1.12",
     "qrcode.react": "^4.2.0",
-    "@zxing/browser": "^0.2.1"
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
