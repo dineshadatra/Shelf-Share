@@ -12,6 +12,7 @@ const bundleWaitlistSql = await read("../../supabase/migrations/202610300014_bun
 const reservationReleaseSql = await read("../../supabase/migrations/202610300015_waitlist_reservation_release.sql");
 const moderationFixSql = await read("../../supabase/migrations/202610300016_catalogue_moderation_photo_and_bundle_fixes.sql");
 const currentAvailabilitySql = await read("../../supabase/migrations/202610300017_waitlist_current_availability_check.sql");
+const ownerDeclarationSql = await read("../../supabase/migrations/202610300018_backend_owner_declaration_acceptance.sql");
 const bundleOwnerUi = await read("../../src/pages/owner-dashboard-page.tsx");
 const bundleAdminUi = await read("../../src/pages/admin-bundle-queue-page.tsx");
 const api = await read("../../supabase/functions/catalogue-api/index.ts");
@@ -193,4 +194,11 @@ test("undated waitlists only receive notices when the copy is free now", () => {
   assert.match(currentAvailabilitySql, /w\.requested_start_at is null/);
   assert.match(currentAvailabilitySql, /blocked_period @> now\(\)/);
   assert.match(currentAvailabilitySql, /reserved_period @> now\(\)/);
+});
+
+test("backend refuses listing saves without explicit owner declaration acceptance", () => {
+  assert.match(ownerDeclarationSql, /p_declaration_accepted is distinct from true/);
+  assert.match(ownerDeclarationSql, /save_book_listing_unchecked_legacy/);
+  assert.match(ownerDeclarationSql, /revoke all on function public\.save_book_listing_unchecked_legacy/);
+  assert.match(listingUi, /p_declaration_accepted:accepted/);
 });
