@@ -1,0 +1,1 @@
+import {BookOpen} from "lucide-react"; import {Link} from "react-router-dom"; export function BrandMark({light=false}:{light?:boolean}){return <Link to="/" className={"brand-mark"+(light?" brand-mark-light":"")} aria-label="ShelfShare home"><span className="brand-mark-icon"><BookOpen size={19} strokeWidth={1.8}/></span><span>Shelf<span>Share</span></span></Link>;}
