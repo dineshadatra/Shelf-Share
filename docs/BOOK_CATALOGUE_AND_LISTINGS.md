@@ -111,6 +111,7 @@ Apply database migrations in order, including the prior identity/security migrat
 - `202610300016_catalogue_moderation_photo_and_bundle_fixes.sql`
 - `202610300017_waitlist_current_availability_check.sql`
 - `202610300018_backend_owner_declaration_acceptance.sql`
+- `202610300019_bundle_approval_validation.sql`
 
 Deploy the `catalogue-api` Edge Function and set the `APP_ORIGIN` secret to the deployed ShelfShare frontend origin. Supabase URL, anon key and service-role key are runtime-provided Edge Function secrets; only the URL and anon key belong in Vite's public environment.
 
