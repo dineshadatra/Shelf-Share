@@ -45,7 +45,7 @@ Browse may remain available to unverified users.
 6. Provider failure/hold expiry releases inventory through an audited transition.
 7. If provider reports success after hold expiry, attempt atomic reacquisition. If conflict exists, do not force booking; initiate appropriate refund and support case.
 
-Whether Owner approval is required before payment is an unresolved PRD decision. Current base workflow assumes no separate approval gate because master context says reader pays online and booking flow starts at request. If product chooses Owner approval, add explicit `OWNER_APPROVAL_PENDING` before payment; do not implement informal chat acceptance as approval.
+**Implemented flow:** Reader submits a request for one physical copy; the database creates a short-lived request hold and notifies the Owner. The Owner explicitly accepts or declines. Both parties must accept the current published rental agreement. Only then can the trusted backend create a payment attempt and extend the same copy reservation. Owner acceptance is not payment confirmation; booking confirmation is provider-webhook-only. The request hold TTL and maximum request horizon remain deployment configuration values.
 
 ## 4. Price calculation
 
