@@ -41,7 +41,7 @@ export default function RegisterPage() {
     if (seconds <= 0) return;
     const timer = window.setInterval(() => setSeconds((value) => Math.max(0, value - 1)), 1000);
     return () => window.clearInterval(timer);
-  }, [seconds > 0]);
+  }, [seconds]);
 
   const requestOtp = async () => {
     setError("");
