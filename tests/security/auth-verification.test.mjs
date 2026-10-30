@@ -25,7 +25,8 @@ test("phone authentication is SMS-only and email OTP is not invoked", () => {
 test("OTP expiry, resend interval and server rate limits are configured", () => {
   assert.match(config, /otp_expiry\s*=\s*300/);
   assert.match(config, /max_frequency\s*=\s*"60s"/);
-  assert.match(config, /timebox = "30d"/);\n  assert.match(config, /inactivity_timeout = "24h"/);
+  assert.match(config, /timebox = "30d"/);
+  assert.match(config, /inactivity_timeout = "24h"/);
   assert.match(config, /sms_sent\s*=\s*15/);
   assert.match(config, /sign_in_sign_ups\s*=\s*20/);
   assert.match(config, /token_verifications\s*=\s*10/);
