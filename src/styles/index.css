@@ -304,3 +304,10 @@ button:disabled{cursor:not-allowed;opacity:.52} a{color:inherit;text-decoration:
  .waitlist-notification>div:last-child{width:100%}
  .waitlist-notification>div:last-child .ss-button{flex:1}
 }
+
+.owner-moderation-reason{display:grid;gap:4px;padding:9px 11px;margin:8px 0;border-left:2px solid #b58b50;border-radius:0 7px 7px 0;background:#faf7ef}
+.owner-moderation-reason strong{font-size:9px;color:#75603e}
+.owner-moderation-reason span{font-size:10px;line-height:1.5;color:#766b57}
+.owner-bundle-status{display:grid;gap:5px;justify-items:end}
+.owner-bundle-status small{max-width:250px;text-align:right;font-size:9px;line-height:1.4;color:#86765b}
+@media(max-width:560px){.owner-bundle-status{justify-items:start}.owner-bundle-status small{text-align:left}}
