@@ -146,7 +146,7 @@ export default function RentalHistoryPage(){
   const uploadConditionPhoto=async(booking:Booking,session:Handover,file:File)=>{
     await run(booking.id,async()=>{
       if(!supabase||!user)throw new Error("Sign in to upload condition evidence.");
-      if(!file.type.startsWith("image/")||file.size>10*1024*1024)throw new Error("Choose a JPEG, PNG or WebP image up to 10 MB.");
+      if(!["image/jpeg","image/png","image/webp"].includes(file.type)||file.size>10*1024*1024)throw new Error("Choose a JPEG, PNG or WebP image up to 10 MB.");
       const extension=file.type==="image/png"?"png":file.type==="image/webp"?"webp":"jpg";
       const objectKey=user.id+"/"+booking.id+"/"+session.id+"/"+crypto.randomUUID()+"."+extension;
       const {error:uploadError}=await supabase.storage.from("rental-evidence-private").upload(objectKey,file,{contentType:file.type,upsert:false});
@@ -236,11 +236,12 @@ export default function RentalHistoryPage(){
       </div>
       <div className="booking-price-breakdown">
         <span>Rental fee <b>{INR.format(booking.rent_subtotal_paise/100)}</b></span>
-        <span>Platform commission (10%) <b>{INR.format(booking.platform_fee_paise/100)}</b></span>
+        <span>Owner-side commission (10%, withheld from rent) <b>{INR.format(booking.platform_fee_paise/100)}</b></span>
         <span>Tax <b>{INR.format(booking.tax_paise/100)}</b></span>
         <span>Security deposit (separate) <b>{booking.deposit_required_paise>0?INR.format(booking.deposit_required_paise/100):"Not configured"}</b></span>
         <strong>Rental checkout total <b>{INR.format(booking.total_due_paise/100)}</b></strong>
       </div>
+      <p className="muted" style={{fontSize:".85rem"}}>The 10% commission is deducted from Owner rent proceeds; it is not added as an extra Reader checkout charge. The checkout total includes rental fee and approved tax only. Any security deposit is a separate provider-held amount and remains disabled until approval.</p>
       {booking.payment_status&&<Alert tone={booking.payment_status==="captured"?"success":booking.payment_status==="failed"?"warning":"info"}>
         <CreditCard size={15}/> Provider payment status: <b>{booking.payment_status.replaceAll("_"," ")}</b>. Browser redirects do not confirm payment.
       </Alert>}
