@@ -124,6 +124,8 @@ begin
   if v_rent is null or v_rent<=0 then raise exception 'The selected rental price is not configured'; end if;
   v_commission:=floor(v_rent::numeric*0.10+0.5)::bigint;
   v_reserved:=tstzrange(p_start_at-v_cfg.buffer_before,p_end_at+v_cfg.buffer_after,'[)');
+  update public.copy_reservations set status='expired'
+    where book_copy_id=p_copy_id and status='hold' and expires_at is not null and expires_at<=now();
   if exists(select 1 from public.book_availability_blocks b where b.book_copy_id=p_copy_id and b.blocked_period&&v_reserved)
     or exists(select 1 from public.copy_reservations r where r.book_copy_id=p_copy_id and r.status in ('hold','confirmed','in_use')
       and r.reserved_period&&v_reserved and (r.status<>'hold' or r.expires_at is null or r.expires_at>now())) then
@@ -509,7 +511,11 @@ begin
   select * into v_location from public.handover_locations where id=v_item.handover_location_id and status='active' and city_id=v_booking.city_id;
   if not found then raise exception 'Approved public handover location is unavailable'; end if;
   if exists(select 1 from public.handover_sessions s where s.booking_id=p_booking_id and s.handover_type=p_handover_type
-    and s.status in ('created','awaiting_counterparty') and s.expires_at>now()) then raise exception 'An active handover session already exists'; end if;
+    and s.status in ('created','awaiting_counterparty') and s.expires_at>now() and s.initiator_id<>p_actor_id) then
+    raise exception 'The other participant already has an active QR session'; end if;
+  update public.handover_sessions s set status='cancelled'
+    where s.booking_id=p_booking_id and s.handover_type=p_handover_type
+      and s.status in ('created','awaiting_counterparty') and s.expires_at>now() and s.initiator_id=p_actor_id;
   insert into public.handover_sessions(booking_id,rental_item_id,handover_type,handover_location_id,initiator_id,
     qr_token_hash,otp_hash,expires_at,status)
   values(p_booking_id,v_item.id,p_handover_type,v_location.id,p_actor_id,p_qr_token_hash,p_otp_hash,p_expires_at,'created')
@@ -689,6 +695,12 @@ begin
       'handover_location_id',b.requested_handover_location_id,'handover_location',h.name,
       'payment_status',(select p.status::text from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
       'payment_amount_paise',(select p.amount_paise from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
+      'owner_agreement_accepted',exists(select 1 from public.rental_agreements a join public.legal_documents d on d.id=a.legal_document_id
+        where a.booking_id=b.id and a.user_id=b.owner_id and d.document_type='rental_agreement'
+          and d.is_published and d.effective_from<=now() and (d.effective_until is null or d.effective_until>now())),
+      'reader_agreement_accepted',exists(select 1 from public.rental_agreements a join public.legal_documents d on d.id=a.legal_document_id
+        where a.booking_id=b.id and a.user_id=b.reader_id and d.document_type='rental_agreement'
+          and d.is_published and d.effective_from<=now() and (d.effective_until is null or d.effective_until>now())),
       'rental_start_at',b.rental_start_at,'rental_due_at',b.rental_due_at,
       'active_handover',(select jsonb_build_object('id',s.id,'type',s.handover_type,'expires_at',s.expires_at,
         'status',s.status,'created_at',s.created_at,'completed_at',s.completed_at,'initiator_id',s.initiator_id,
