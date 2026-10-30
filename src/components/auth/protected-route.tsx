@@ -4,14 +4,14 @@ import { useAuth } from "@/contexts/auth-context";
 import { supabase } from "@/lib/supabase";
 import { Alert } from "@/components/ui/alert";
 
-export function ProtectedRoute({ children, staffOnly = false }: { children: ReactNode; staffOnly?: boolean }) {
+export function ProtectedRoute({ children, staffOnly = false, moderationOnly = false }: { children: ReactNode; staffOnly?: boolean; moderationOnly?: boolean }) {
   const { configured, loading, user } = useAuth();
   const location = useLocation();
   const [profileExists, setProfileExists] = useState<boolean | null>(null);
   const [accountStatus, setAccountStatus] = useState<string | null>(null);
   const [checkingProfile, setCheckingProfile] = useState(true);
-  const [staffAllowed, setStaffAllowed] = useState<boolean | null>(staffOnly ? null : true);
-  const [checkingStaff, setCheckingStaff] = useState(staffOnly);
+  const [staffAllowed, setStaffAllowed] = useState<boolean | null>(staffOnly || moderationOnly ? null : true);
+  const [checkingStaff, setCheckingStaff] = useState(staffOnly || moderationOnly);
 
   useEffect(() => {
     let active = true;
@@ -48,7 +48,7 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
       .catch(() => { if (active) setStaffAllowed(false); })
       .finally(() => { if (active) setCheckingStaff(false); });
     return () => { active = false; };
-  }, [staffOnly, user?.id]);
+  }, [staffOnly, moderationOnly, user?.id]);
 
   if (!configured) return <main className="page-container" style={{ paddingBlock: 60 }}>
     <Alert tone="warning" title="Authentication is not configured">
@@ -59,6 +59,6 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
   if (!user) return <Navigate to={staffOnly ? "/admin/login" : "/login"} replace state={{ from: location.pathname }} />;
   if (!profileExists) return <Navigate to="/register?resume=1" replace />;
   if (accountStatus !== "active") return <main className="page-container" style={{ paddingBlock: 60 }}><Alert tone="warning" title="Account access is restricted">Your ShelfShare account is not active. Contact ShelfShare support for next steps.</Alert></main>;
-  if (staffOnly && !staffAllowed) return <Navigate to="/" replace />;
+  if ((staffOnly || moderationOnly) && !staffAllowed) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
