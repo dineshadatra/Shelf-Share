@@ -9,7 +9,7 @@
 - Registration requires a verified phone, display name, DOB >= 18, a camera-captured JPEG profile photo, and acceptance of the active Terms and Privacy versions.
 - The registration RPC checks the verified phone timestamp and DOB in Postgres. Registration policies must be activated by an authorised product/legal operator before registration can complete.
 - Identity documents are stored in private Storage buckets. Browser clients can upload only to their own user-prefixed paths. No client read policy exists for identity documents, selfie or private profile captures.
-- Manual review is performed with the verification-admin Edge Function and the review_verification_case database function. Reviewer role, assignment and the cannot-review-own-account constraint are checked server-side.
+- Manual review is performed with the verification-admin Edge Function and the review_verification_case database function. Reviewer role, assignment and the cannot-review-own-account constraint are checked server-side. Suspension marks the profile suspended, clears the verified status used by listing/booking gates, and applies a long-duration Auth ban via the server-only Admin API. Reinstate/unban must remain a separate authorised operational decision.
 - Marketplace listing and booking gates continue to depend on verified status in database policies/functions; UI state is not treated as authority.
 
 ## Provider and deployment steps
@@ -31,5 +31,5 @@
 - The optional address-evidence upload is a workflow attachment only. PAN is not treated as address proof. Accepted address evidence, when required, must be specified by the product/legal policy before reviewers rely on it.
 - Supabase Auth applies platform OTP expiry, resend throttling and request rate limits. The UI cooldown is not a security control. The configured verification request limit is IP-based, not a strict per-phone wrong-code counter; if ShelfShare needs a lower per-number failure threshold, add an SMS/OTP orchestration service or Auth hook before production. CAPTCHA must be enabled in hosted Auth and connected to the client before production.
 - Admin access to documents is intentionally limited to short-lived signed URLs from a role-checked Edge Function, and each preview request is written to an access-audit table. Do not expose service-role credentials to the frontend.
-- The initial reviewer implementation has role and self-review checks. Before launch, define maker-checker requirements, reviewer training, data retention/deletion periods, appeals, address verification standards, support SLAs and a second-factor policy for staff.
+- The initial reviewer implementation has role and self-review checks. Before launch, define maker-checker requirements, reviewer training, data retention/deletion periods, appeals, address verification standards, support SLAs, a controlled reinstatement/unban workflow, and a second-factor policy for staff.
 - The SQL migration has not been applied to a live project by this change. Test it against the exact Supabase/Postgres version and existing migrations before enabling the app.
