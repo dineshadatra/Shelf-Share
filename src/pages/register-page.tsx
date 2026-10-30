@@ -5,6 +5,7 @@ import { AuthLayout } from "@/layouts/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { AuthCaptcha, captchaRequired } from "@/components/auth/auth-captcha";
 import { LiveCameraCapture } from "@/components/auth/live-camera-capture";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase, normaliseIndianPhone, userFacingAuthError } from "@/lib/supabase";
@@ -26,6 +27,8 @@ export default function RegisterPage() {
   const [photo, setPhoto] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   const navigate = useNavigate();
   const ageCutoff = new Date();
   ageCutoff.setFullYear(ageCutoff.getFullYear() - 18);
@@ -59,6 +62,7 @@ export default function RegisterPage() {
   const requestOtp = async () => {
     setError("");
     if (!supabase) { setError("Supabase is not configured. Add the VITE_SUPABASE environment variables."); return; }
+    if (captchaRequired && !captchaToken) { setError("Complete the security check before requesting an OTP."); return; }
     if (!policy) { setError("Registration is paused until approved Terms and Privacy versions are configured."); return; }
     if (!accepted) { setError("Please accept the current Terms and Privacy Notice before continuing."); return; }
     if (!name.trim() || !dob) { setError("Name and date of birth are required."); return; }
@@ -67,12 +71,12 @@ export default function RegisterPage() {
       const formatted = normaliseIndianPhone(phone);
       setBusy(true);
       const { error: otpError } = await supabase.auth.signInWithOtp({
-        phone: formatted, options: { shouldCreateUser: true, channel: "sms" }
+        phone: formatted, options: { shouldCreateUser: true, channel: "sms", ...(captchaToken ? { captchaToken } : {}) }
       });
       if (otpError) throw otpError;
       setNormalisedPhone(formatted); setStep("otp"); setSeconds(60);
     } catch (reason) { setError(userFacingAuthError(reason)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setCaptchaToken(null); setCaptchaReset((value) => value + 1); }
   };
 
   const verifyOtp = async () => {
@@ -125,13 +129,15 @@ export default function RegisterPage() {
             <small>Terms {policy.terms_version} · Privacy {policy.privacy_version}</small>
           </> : <Alert tone="warning">Registration is disabled until ShelfShare publishes and activates approved Terms and Privacy documents.</Alert>}
         </div>
-        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted}><Smartphone size={17}/>{busy ? "Sending OTP…" : user ? "Continue to live photo" : "Create account with OTP"}</Button>
+        <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
+        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted || (captchaRequired && !captchaToken)}><Smartphone size={17}/>{busy ? "Sending OTP…" : user ? "Continue to live photo" : "Create account with OTP"}</Button>
       </>}
       {step === "otp" && <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
         <Input label="6-digit OTP" name="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\\D/g, "").slice(0, 6))}/>
         <Button type="submit" size="lg" block disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify mobile number"}</Button>
-        <Button type="button" variant="ghost" block disabled={busy || seconds > 0} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
+        <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
+        <Button type="button" variant="ghost" block disabled={busy || seconds > 0 || (captchaRequired && !captchaToken)} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
       </>}
       {step === "camera" && <>
         <div className="camera-requirement"><span className="camera-icon"><Camera size={19}/></span><div><strong>First-time live profile photo</strong><p>Use your device camera now. Gallery uploads are not accepted for registration.</p></div></div>
