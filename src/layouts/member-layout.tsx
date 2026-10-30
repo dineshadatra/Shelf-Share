@@ -1,0 +1,1 @@
+export {AppShell as MemberLayout} from "@/components/layouts/app-shell";
