@@ -33,7 +33,8 @@
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.3.1",
     "zod": "^4.1.12",
-    "qrcode.react": "^4.2.0"
+    "qrcode.react": "^4.2.0",
+    "@zxing/browser": "^0.2.1"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
