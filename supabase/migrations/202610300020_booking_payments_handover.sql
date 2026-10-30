@@ -685,17 +685,18 @@ grant execute on function public.create_finance_refund(uuid,uuid,bigint,text,tex
 create or replace function public.request_deposit_release(p_deposit_id uuid, p_idempotency_key text)
 returns uuid language plpgsql security definer
 set search_path = pg_catalog, public, private
-as $$
-declare v_user uuid:=auth.uid(); v_deposit public.deposits%rowtype; v_booking public.bookings%rowtype;
-  v_provider public.payment_provider_approvals%rowtype; v_request uuid;
+as $
+declare
+  v_user uuid:=auth.uid(); v_deposit public.deposits%rowtype; v_booking public.bookings%rowtype;
+  v_provider public.payment_provider_approvals%rowtype; v_request uuid; v_released bigint; v_remaining bigint;
 begin
   if v_user is null then raise exception 'Authentication required'; end if;
-  if p_idempotency_key is null or length(p_idempotency_key)<16 then raise exception 'Valid idempotency key required'; end if;
+  if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then raise exception 'Valid idempotency key required'; end if;
   select * into v_deposit from public.deposits where id=p_deposit_id for update;
   if not found or v_deposit.payer_id<>v_user then raise exception 'Deposit not found'; end if;
   select id into v_request from public.deposit_release_requests where idempotency_key=p_idempotency_key;
   if v_request is not null then return v_request; end if;
-  if not v_deposit.feature_enabled_at_creation or v_deposit.status<>'held_by_provider' then
+  if not v_deposit.feature_enabled_at_creation or v_deposit.status not in ('held_by_provider','partially_applied') then
     raise exception 'Deposit is not eligible for release under an approved provider arrangement';
   end if;
   select * into v_booking from public.bookings where id=v_deposit.booking_id for update;
@@ -705,10 +706,10 @@ begin
     raise exception 'An open dispute or deposit claim blocks release';
   end if;
   if exists(select 1 from public.bookings x where (x.reader_id=v_user or x.owner_id=v_user)
-    and x.status in ('owner_accepted','payment_pending','confirmed','collection_pending','active','return_pending','disputed')) then
+    and x.status::text in ('owner_accepted','payment_pending','confirmed','collection_pending','active','return_pending','disputed')) then
     raise exception 'Deposit release is blocked while this member has any active rental';
   end if;
-  select * into v_provider from public.payment_provider_approvals p
+  select p.* into v_provider from public.payment_provider_approvals p
     join public.payments pay on pay.provider=p.provider_code
     where pay.booking_id=v_booking.id and p.enabled_for_deposits and p.supports_deposit_release
       and p.supports_deposit_hold and p.supports_deposit_dispute_hold
@@ -716,18 +717,22 @@ begin
       and (p.expires_at is null or p.expires_at>now())
     limit 1;
   if not found then raise exception 'No approved provider/legal deposit release arrangement is enabled'; end if;
+  select coalesce(sum(amount_paise),0) into v_released from public.deposit_ledger
+    where deposit_id=v_deposit.id and event_type in ('released','amount_applied');
+  v_remaining:=greatest(v_deposit.amount_paise-v_released,0);
+  if v_remaining<=0 then raise exception 'No provider-confirmed deposit amount remains to release'; end if;
   insert into public.deposit_release_requests(deposit_id,requested_by,amount_paise,idempotency_key)
-    values(v_deposit.id,v_user,v_deposit.amount_paise,p_idempotency_key) returning id into v_request;
+    values(v_deposit.id,v_user,v_remaining,p_idempotency_key) returning id into v_request;
   update public.deposits set status='release_pending' where id=v_deposit.id;
   insert into public.deposit_ledger(deposit_id,event_type,amount_paise,idempotency_key,metadata)
-    values(v_deposit.id,'release_requested',v_deposit.amount_paise,'deposit-release:'||p_idempotency_key,
+    values(v_deposit.id,'release_requested',v_remaining,'deposit-release:'||p_idempotency_key,
       jsonb_build_object('release_request_id',v_request));
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
-    values('deposit',v_deposit.id,'deposit_release_requested',jsonb_build_object('release_request_id',v_request),
+    values('deposit',v_deposit.id,'deposit_release_requested',jsonb_build_object('release_request_id',v_request,'amount_paise',v_remaining),
       'deposit-release-outbox:'||p_idempotency_key) on conflict(idempotency_key) do nothing;
   return v_request;
 end;
-$$;
+$;
 revoke all on function public.request_deposit_release(uuid,text) from public, anon;
 grant execute on function public.request_deposit_release(uuid,text) to authenticated;
 
@@ -1011,11 +1016,14 @@ begin
   if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then
     raise exception 'Valid payout idempotency key required';
   end if;
+  select id into v_payout from public.payouts where idempotency_key=p_idempotency_key;
+  if v_payout is not null then return v_payout; end if;
   select * into v_earning from public.owner_earnings where id=p_earning_id and owner_id=v_user for update;
   if not found or v_earning.status<>'eligible' then raise exception 'No eligible owner settlement found'; end if;
   select * into v_approval from public.payment_provider_approvals
-    where provider_code=p_provider and enabled_for_rent and supports_vendor_onboarding and supports_split_settlement
-      and supports_delayed_transfer and supports_reconciliation and accounting_approval_reference is not null
+    where provider_code=p_provider and enabled_for_rent and marketplace_model='peer_to_peer_physical_book_rental'
+      and supports_vendor_onboarding and supports_split_settlement and supports_delayed_transfer
+      and supports_reconciliation and accounting_approval_reference is not null
       and legal_approval_reference is not null and (expires_at is null or expires_at>now());
   if not found then raise exception 'Approved marketplace settlement provider is unavailable'; end if;
   select * into v_vendor from public.provider_vendor_accounts
