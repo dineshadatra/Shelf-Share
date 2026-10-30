@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -19,7 +19,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../src/pages/rental-history-page.tsx"),
   read("../../src/components/marketplace/qr-code-scanner.tsx"),
   read("../../supabase/config.toml"),
-  read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql")
+  read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql"),
+  read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -37,7 +38,7 @@ test("the new enum value is isolated before migrations use it", () => {
 });
 
 test("each new migration has one transaction and balanced dollar delimiters", () => {
-  for (const [name, source] of [["021", finance], ["023", booking], ["024", financeEvents], ["025", outbox], ["026", disputes]]) {
+  for (const [name, source] of [["021", finance], ["023", booking], ["024", financeEvents], ["025", outbox], ["026", disputes], ["027", providerGate]]) {
     assert.equal((source.match(/^begin;$/gim) ?? []).length, 1, name + " begins once");
     assert.equal((source.match(/^commit;$/gim) ?? []).length, 1, name + " commits once");
     assert.equal((source.match(/\$\$/g) ?? []).length % 2, 0, name + " dollar-quote delimiters are balanced");
@@ -257,6 +258,13 @@ test("provider-held deposits require a persistent provider reference before show
   assert.match(depositEvent, /p_provider_reference is null/);
   assert.match(depositEvent, /deposit\.dispute_hold/);
   assert.match(depositEvent, /deposit\.claim_held/);
+});
+
+test("every enabled marketplace provider must support idempotent calls", () => {
+  assert.match(providerGate, /check \(not enabled_for_rent or supports_idempotency\)/);
+  assert.match(adapter, /idempotencyKey/);
+  assert.match(adapter, /No provider is registered until written product-level approval is obtained/);
+  assert.match(api, /No approved and deployed adapter is registered|provider adapter is deployed/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
