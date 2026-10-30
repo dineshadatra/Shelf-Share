@@ -42,14 +42,14 @@ grant execute on function public.get_my_deposit_positions() to authenticated;
 -- may configure a per-booking deposit only after a live provider deposit model
 -- and separate legal/accounting approvals are on record.
 create or replace function public.configure_booking_deposit(
-  p_booking_id uuid,p_amount_paise bigint,p_policy_version text,p_custody_descriptor text
+  p_booking_id uuid,p_provider text,p_amount_paise bigint,p_policy_version text,p_custody_descriptor text
 ) returns uuid
 language plpgsql security definer
 set search_path = pg_catalog, public, private
 as $$
 declare
   v_booking public.bookings%rowtype; v_approval public.payment_provider_approvals%rowtype;
-  v_payment public.payments%rowtype; v_deposit uuid; v_actor uuid:=auth.uid();
+  v_deposit uuid; v_actor uuid:=auth.uid();
 begin
   if coalesce(current_setting('role',true),'')<>'service_role' then
     if not exists(select 1 from public.user_roles r where r.user_id=v_actor and r.revoked_at is null
@@ -64,10 +64,9 @@ begin
     raise exception 'Deposit can only be configured before collection';
   end if;
   if exists(select 1 from public.deposits where booking_id=p_booking_id) then raise exception 'A deposit record already exists'; end if;
-  select * into v_payment from public.payments where booking_id=p_booking_id order by created_at desc limit 1;
-  if not found then raise exception 'Booking payment provider is not set'; end if;
   select * into v_approval from public.payment_provider_approvals
-    where provider_code=v_payment.provider and enabled_for_deposits
+    where provider_code=p_provider and enabled_for_rent and enabled_for_deposits
+      and marketplace_model='peer_to_peer_physical_book_rental'
       and supports_deposit_hold and supports_deposit_release
       and supports_deposit_dispute_hold and supports_deposit_application
       and length(btrim(coalesce(legal_approval_reference,'')))>=5
@@ -76,7 +75,7 @@ begin
   if not found then raise exception 'Separate written provider, legal and accounting deposit approvals are required'; end if;
   insert into public.deposits(booking_id,payer_id,provider,amount_paise,status,custody_descriptor,
     legal_approval_reference,policy_version,feature_enabled_at_creation)
-  values(p_booking_id,v_booking.reader_id,v_payment.provider,p_amount_paise,'collection_pending',
+  values(p_booking_id,v_booking.reader_id,p_provider,p_amount_paise,'collection_pending',
     left(p_custody_descriptor,500),v_approval.legal_approval_reference,p_policy_version,true)
   returning id into v_deposit;
   update public.bookings set deposit_required_paise=p_amount_paise,
@@ -92,8 +91,8 @@ begin
   return v_deposit;
 end;
 $$;
-revoke all on function public.configure_booking_deposit(uuid,bigint,text,text) from public,anon;
-grant execute on function public.configure_booking_deposit(uuid,bigint,text,text) to authenticated,service_role;
+revoke all on function public.configure_booking_deposit(uuid,text,bigint,text,text) from public,anon;
+grant execute on function public.configure_booking_deposit(uuid,text,bigint,text,text) to authenticated,service_role;
 
 -- Prevent a rent-only checkout from silently bypassing a configured deposit.
 create or replace function public.begin_booking_payment(
