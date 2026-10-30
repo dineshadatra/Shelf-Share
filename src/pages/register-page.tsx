@@ -82,15 +82,16 @@ export default function RegisterPage() {
   const verifyOtp = async () => {
     setError("");
     if (!supabase) return;
+    if (captchaRequired && !captchaToken) { setError("Complete the security check before verifying the OTP."); return; }
     if (!/^\\d{6}$/.test(code)) { setError("Enter the six-digit code sent to your mobile."); return; }
     setBusy(true);
     try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalisedPhone, token: code, type: "sms" });
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalisedPhone, token: code, type: "sms", options: captchaToken ? { captchaToken } : undefined });
       if (verifyError) throw verifyError;
       if (!data.user) throw new Error("The mobile number could not be verified.");
       setStep("camera");
     } catch (reason) { setError(userFacingAuthError(reason)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setCaptchaToken(null); setCaptchaReset((value) => value + 1); }
   };
 
   const completeRegistration = async () => {
@@ -135,7 +136,7 @@ export default function RegisterPage() {
       {step === "otp" && <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
         <Input label="6-digit OTP" name="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\\D/g, "").slice(0, 6))}/>
-        <Button type="submit" size="lg" block disabled={busy || code.length !== 6}>{busy ? "Verifying…" : "Verify mobile number"}</Button>
+        <Button type="submit" size="lg" block disabled={busy || code.length !== 6 || (captchaRequired && !captchaToken)}>{busy ? "Verifying…" : "Verify mobile number"}</Button>
         <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
         <Button type="button" variant="ghost" block disabled={busy || seconds > 0 || (captchaRequired && !captchaToken)} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
       </>}
