@@ -25,7 +25,7 @@ export default function VerificationPage() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
 
-  useEffect(() => { void refreshVerification(); }, []);
+  useEffect(() => { void refreshVerification(); }, [refreshVerification]);
 
   const validateFile = (file: File | null, label: string) => {
     if (!file) throw new Error(`Select your ${label}.`);
