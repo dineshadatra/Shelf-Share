@@ -47,13 +47,11 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
     return () => { active = false; };
   }, [staffOnly, user?.id]);
 
-  if (!configured) {
-    return <main className="page-container" style={{ paddingBlock: 60 }}>
-      <Alert tone="warning" title="Authentication is not configured">
-        Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your local .env file, then restart the development server.
-      </Alert>
-    </main>;
-  }
+  if (!configured) return <main className="page-container" style={{ paddingBlock: 60 }}>
+    <Alert tone="warning" title="Authentication is not configured">
+      Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your local .env file, then restart the development server.
+    </Alert>
+  </main>;
   if (loading || checkingProfile || checkingStaff) return <div className="page-container" style={{ paddingBlock: 80 }}>Checking your secure account…</div>;
   if (!user) return <Navigate to={staffOnly ? "/admin/login" : "/login"} replace state={{ from: location.pathname }} />;
   if (!profileExists) return <Navigate to="/register?resume=1" replace />;
