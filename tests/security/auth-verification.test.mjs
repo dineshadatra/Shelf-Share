@@ -3,14 +3,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [config, migration, securityMigration, edge, login, register, captcha] = await Promise.all([
+const [config, migration, securityMigration, edge, login, register, captcha, profile] = await Promise.all([
   read("../../supabase/config.toml"),
   read("../../supabase/migrations/202610300007_authentication_verification.sql"),
   read("../../supabase/migrations/202610300006_security_rls_functions.sql"),
   read("../../supabase/functions/verification-admin/index.ts"),
   read("../../src/pages/login-page.tsx"),
   read("../../src/pages/register-page.tsx"),
-  read("../../src/components/auth/auth-captcha.tsx")
+  read("../../src/components/auth/auth-captcha.tsx"),\n  read("../../src/pages/profile-page.tsx")
 ]);
 
 test("phone authentication is SMS-only and email OTP is not invoked", () => {
@@ -55,6 +55,26 @@ test("registration enforces phone verification, age, camera object and accepted 
   assert.match(fn, /profile-private/);
   assert.match(fn, /registration_policy_versions/);
   assert.match(fn, /registration_acceptances/);
+});
+
+
+test("phone changes require the new number OTP and synchronise the verified phone timestamp", () => {
+  assert.match(profile, /updateUser\(\{ phone: formatted \}\)/);
+  assert.match(profile, /type: "phone_change"/);
+  assert.match(profile, /rpc\("sync_verified_phone"\)/);
+  const fn = migration.slice(migration.indexOf("create or replace function public.sync_verified_phone"), migration.indexOf("create or replace function public.submit_identity_verification"));
+  assert.match(fn, /auth\\.uid\\(\\)/);
+  assert.match(fn, /auth\\.users/);
+  assert.match(fn, /phone_confirmed_at/);
+  assert.match(fn, /phone_number_changed/);
+  assert.ok(fn.includes("as $func$") && fn.includes("$func$;"));
+});
+
+test("auth migration has balanced SQL function delimiters", () => {
+  assert.equal((migration.match(/\\$\\$/g) ?? []).length % 2, 0);
+  assert.equal((migration.match(/\\$func\\$/g) ?? []).length % 2, 0);
+  assert.doesNotMatch(migration, /\\bas \\$(?:\\s|declare)/);
+  assert.equal((migration.match(/\\bcommit;/g) ?? []).length, 1);
 });
 
 test("identity submission binds evidence to the authenticated user and private bucket", () => {
