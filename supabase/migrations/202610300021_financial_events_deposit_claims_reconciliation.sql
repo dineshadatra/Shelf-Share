@@ -257,7 +257,10 @@ begin
   if p_amount_paise is null or p_amount_paise<=0 or length(btrim(coalesce(p_policy_version,'')))<3
     or length(btrim(coalesce(p_custody_descriptor,'')))<10 then raise exception 'Approved deposit amount, policy and custody disclosure are required'; end if;
   select * into v_booking from public.bookings where id=p_booking_id for update;
-  if not found or v_booking.status not in ('owner_accepted','payment_pending') then raise exception 'Deposit must be configured before collection'; end if;
+  if not found or v_booking.status<>'owner_accepted' then raise exception 'Deposit must be configured before a payment attempt starts'; end if;
+  if exists(select 1 from public.payments where booking_id=p_booking_id) then
+    raise exception 'A payment attempt already exists; deposit policy cannot be changed after checkout begins';
+  end if;
   if exists(select 1 from public.deposits where booking_id=p_booking_id) then raise exception 'Deposit already exists'; end if;
   select * into v_approval from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent and enabled_for_deposits
