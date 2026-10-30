@@ -3,7 +3,7 @@ import { Camera, CameraOff, CheckCircle2, RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 
-export function LiveCameraCapture({ onCapture }: { onCapture: (file: File) => void }) {
+export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState("");
@@ -89,7 +89,7 @@ export function LiveCameraCapture({ onCapture }: { onCapture: (file: File) => vo
     <div className="camera-actions">
       {!captured && !active && <Button type="button" onClick={startCamera}><Camera size={16}/> Allow camera & start</Button>}
       {active && <Button type="button" onClick={capture}><CheckCircle2 size={16}/> Capture live photo</Button>}
-      {captured && <Button type="button" variant="outline" onClick={() => { setCaptured(null); onCapture(null as unknown as File); void startCamera(); }}><RefreshCw size={16}/> Retake photo</Button>}
+      {captured && <Button type="button" variant="outline" onClick={() => { setCaptured(null); onCapture(null); void startCamera(); }}><RefreshCw size={16}/> Retake photo</Button>}
       {active && <Button type="button" variant="ghost" onClick={stopCamera}><CameraOff size={16}/> Stop camera</Button>}
     </div>
     <p className="ss-field-hint">A live camera capture is required. Gallery uploads are not accepted. Camera capture is not a biometric liveness check.</p>
