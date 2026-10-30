@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     .is("revoked_at", null);
   if (roleError) return reply(500, { error: "Unable to check staff permissions" });
   const roles = (roleRows ?? []).map((row) => row.role as string);
-  const allowedRoles = ["verification_reviewer", "moderator", "admin", "super_admin"];
+  const allowedRoles = ["verification_reviewer", "admin", "super_admin"];
   if (!roles.some((role) => allowedRoles.includes(role))) {
     return reply(403, { error: "Verification reviewer permission required" });
   }
