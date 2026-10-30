@@ -16,6 +16,7 @@ type CaseItem = {
   documents: Array<{ id: string; document_type: string; document_last4: string | null; status: string }>;
   file_kinds: Array<{ id: string; file_kind: string }>;
   audit_history: Array<{ id: number; actor_user_id: string | null; action: string; reason_code: string | null; created_at: string; from_status: string | null; to_status: string | null }>;
+  document_access_history: Array<{ id: number; actor_user_id: string; accessed_at: string; purpose: string; document_id: string }>;
 };
 
 export default function AdminVerificationQueuePage() {
@@ -89,7 +90,7 @@ export default function AdminVerificationQueuePage() {
       cases.length === 0 ? <div className="surface admin-case-empty"><ClipboardCheck size={26}/><strong>No pending verification cases</strong><p>The queue is currently clear.</p></div> :
       <div className="admin-case-list">{cases.map((item) => <article className="surface admin-case" key={item.id}>
         <div className="admin-case-head"><div><span className="eyebrow">CASE {item.id.slice(0,8).toUpperCase()}</span><h2>{item.display_name}</h2><p>{item.masked_phone} · DOB {item.date_of_birth ?? "Not supplied"} · Account {item.account_status}</p></div><Badge tone={item.status === "rejected" ? "rose" : "amber"}>{item.status.replaceAll("_"," ")}</Badge></div>
-        <div className="admin-case-meta"><span>Submitted: {new Date(item.submitted_at).toLocaleString("en-IN")}</span><span>Assigned reviewer: {item.assigned_reviewer_id ?? "Unassigned"}</span></div>
+        <div className="admin-case-meta"><span>Submitted: {new Date(item.submitted_at).toLocaleString("en-IN")}</span><span>Reviewed: {item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("en-IN") : "Pending"}</span><span>Assigned reviewer: {item.assigned_reviewer_id ?? "Unassigned"}</span></div>
         <div className="admin-document-list">{item.documents.map((doc) => {
           const file = item.file_kinds.find((entry) => entry.file_kind === "identity_document");
           return <div key={doc.id}><strong>{doc.document_type.replaceAll("_"," ")} {doc.document_last4 ? `··${doc.document_last4}` : ""}</strong><Button size="sm" variant="outline" disabled={!file || busyId === item.id} onClick={() => file && void preview(item,file.id)}><Eye size={14}/> Secure preview</Button></div>;
@@ -97,9 +98,10 @@ export default function AdminVerificationQueuePage() {
         {item.requested_information && <Alert tone="warning">Information requested: {item.requested_information}</Alert>}
         {item.decision_reason && <p className="admin-case-reason">Previous decision: {item.decision_reason}</p>}
         {item.internal_notes && <p className="admin-case-reason">Internal notes: {item.internal_notes}</p>}
-        {item.audit_history.length > 0 && <details className="admin-audit-history">
-          <summary>Audit history ({item.audit_history.length})</summary>
-          <ol>{item.audit_history.map((entry) => <li key={entry.id}><strong>{entry.action.replaceAll("_"," ")}</strong><span>{new Date(entry.created_at).toLocaleString("en-IN")} · {entry.actor_user_id ?? "System"}</span>{entry.reason_code && <small>{entry.reason_code}</small>}</li>)}</ol>
+        {(item.audit_history.length > 0 || item.document_access_history.length > 0) && <details className="admin-audit-history">
+          <summary>Audit history ({item.audit_history.length + item.document_access_history.length})</summary>
+          <ol>{item.audit_history.map((entry) => <li key={`decision-${entry.id}`}><strong>{entry.action.replaceAll("_"," ")}</strong><span>{new Date(entry.created_at).toLocaleString("en-IN")} · {entry.actor_user_id ?? "System"}</span>{entry.reason_code && <small>{entry.reason_code}</small>}</li>)}
+            {item.document_access_history.map((entry) => <li key={`access-${entry.id}`}><strong>Private file preview</strong><span>{new Date(entry.accessed_at).toLocaleString("en-IN")} · {entry.actor_user_id}</span><small>{entry.purpose}</small></li>)}</ol>
         </details>}
         <div className="admin-case-actions">
           <Button size="sm" variant="outline" disabled={busyId === item.id} onClick={() => assignToMe(item)}>Assign to me</Button>
