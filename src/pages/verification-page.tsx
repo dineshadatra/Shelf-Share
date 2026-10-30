@@ -14,7 +14,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const acceptedTypes = ["image/jpeg", "image/png", "application/pdf"];
 
 export default function VerificationPage() {
-  const { user, verification, refreshVerification } = useAuth();
+  const { user, verification, verificationCase, refreshVerification } = useAuth();
   const [documentType, setDocumentType] = useState<"passport" | "pan" | "driving_licence">("passport");
   const [documentFile, setDocumentFile] = useState<File | null>(null);
   const [addressFile, setAddressFile] = useState<File | null>(null);
@@ -83,6 +83,9 @@ export default function VerificationPage() {
       <section className="surface verification-panel">
         <div className="verification-status"><span className="verification-icon"><ShieldCheck/></span><div><strong>{statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1)}</strong><p>{status === "verified" ? "Your identity has been approved." : "You can browse while your verification is pending. Listing and renting remain blocked until verified."}</p></div><Badge tone={status === "verified" ? "green" : status === "rejected" ? "rose" : "amber"}>{statusLabel}</Badge></div>
         {error && <Alert tone="warning">{error}</Alert>}{notice && <Alert tone="success">{notice}</Alert>}
+        {verificationCase?.requested_information && <Alert tone="warning" title="Additional information requested">{verificationCase.requested_information}</Alert>}
+        {verificationCase?.decision_reason && <Alert tone="info" title="Reviewer decision">{verificationCase.decision_reason}</Alert>}
+        {verificationCase && <p className="verification-case-meta">Submitted {new Date(verificationCase.submitted_at).toLocaleString("en-IN")}{verificationCase.reviewed_at ? ` · Reviewed ${new Date(verificationCase.reviewed_at).toLocaleString("en-IN")}` : ""}</p>}
         {status === "verified" ? <Alert tone="success">Your account is identity verified. Address verification remains subject to any applicable operational/legal requirement.</Alert> : canSubmit ? <>
           <div className="verification-step"><span>1</span><div><strong>Choose an identity document</strong><p>Passport is preferred. PAN or Driving Licence are accepted fallback types for manual review.</p></div></div>
           <label className="ss-label" htmlFor="document-type">Document type</label>
