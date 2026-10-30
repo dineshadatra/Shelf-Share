@@ -217,6 +217,16 @@ Deno.serve(async (req) => {
       return reply(201, { booking_id: data, status: "requested", payment_started: false });
     }
 
+    if (action === "booking_configuration") {
+      const { data, error } = await service.from("booking_workflow_configuration")
+        .select("rental_duration_mode,configuration_version,handover_ttl_seconds,is_active")
+        .eq("id", true).eq("is_active", true).maybeSingle();
+      if (error) return reply(500, { error: "Unable to load booking policy" });
+      if (!data) return reply(409, { error: "Booking is not enabled until approved timing policy is configured" });
+      return reply(200, { rental_duration_mode: data.rental_duration_mode,
+        configuration_version: data.configuration_version, handover_ttl_seconds: data.handover_ttl_seconds });
+    }
+
     if (action === "my_bookings") {
       const { data, error } = await userClient.rpc("get_my_booking_workspace");
       if (error) return reply(400, { error: error.message });
@@ -298,6 +308,44 @@ Deno.serve(async (req) => {
         await service.from("payments").update({ provider_status: "intent_creation_uncertain" }).eq("id", payment.id);
         return reply(202, { payment_id: payment.id, booking_id: bookingId, status: "payment_pending", message: "Payment initiation is being reconciled. Do not create another payment attempt." });
       }
+    }
+
+    if (action === "record_booking_tax_calculation") {
+      const allowed = await hasRole(service, user.id, ["finance_operator", "admin", "super_admin"]);
+      if (!allowed) return reply(403, { error: "Finance permission required" });
+      const bookingId = text(payload.booking_id, 64);
+      const tax = Number(payload.tax_paise);
+      const version = text(payload.policy_version, 80);
+      const reference = text(payload.calculation_reference, 200);
+      if (!bookingId || !Number.isSafeInteger(tax) || tax < 0 || !version || !reference || reference.length < 5) {
+        return reply(400, { error: "Approved tax calculation details are required" });
+      }
+      const { error } = await service.rpc("record_booking_tax_calculation", {
+        p_actor_id: user.id, p_booking_id: bookingId, p_tax_paise: tax,
+        p_policy_version: version, p_calculation_reference: reference,
+      });
+      if (error) return reply(400, { error: error.message });
+      return reply(200, { recorded: true, tax_calculated: true });
+    }
+
+    if (action === "record_owner_settlement_calculation") {
+      const allowed = await hasRole(service, user.id, ["finance_operator", "admin", "super_admin"]);
+      if (!allowed) return reply(403, { error: "Finance permission required" });
+      const earningId = text(payload.earning_id, 64);
+      const tax = Number(payload.tax_withheld_paise);
+      const providerFee = Number(payload.provider_fee_paise);
+      const adjustment = Number(payload.adjustment_paise ?? 0);
+      const net = Number(payload.net_payable_paise);
+      const version = text(payload.policy_version, 80);
+      if (!earningId || ![tax, providerFee, adjustment, net].every(Number.isSafeInteger)
+        || tax < 0 || providerFee < 0 || !version) return reply(400, { error: "Final settlement calculation is incomplete" });
+      const { error } = await service.rpc("record_owner_settlement_calculation", {
+        p_actor_id: user.id, p_earning_id: earningId, p_tax_withheld_paise: tax,
+        p_provider_fee_paise: providerFee, p_adjustment_paise: adjustment,
+        p_net_payable_paise: net, p_policy_version: version,
+      });
+      if (error) return reply(400, { error: error.message });
+      return reply(200, { calculated: true, eligible_for_payout: true });
     }
 
     if (action === "configure_deposit") {
@@ -520,7 +568,7 @@ Deno.serve(async (req) => {
       const amount = payload.amount_paise == null ? null : Number(payload.amount_paise);
       const reason = text(payload.reason, 2000);
       if (!claimId || !decision || !reason || reason.length < 10 || (amount !== null && (!Number.isSafeInteger(amount) || amount < 0))) return reply(400, { error: "Claim decision details are incomplete" });
-      const { error } = await service.rpc("decide_deposit_claim", {
+      const { error } = await userClient.rpc("decide_deposit_claim", {
         p_claim_id: claimId, p_decision: decision, p_amount_paise: amount, p_reason: reason,
       });
       if (error) return reply(400, { error: error.message });
@@ -541,7 +589,7 @@ Deno.serve(async (req) => {
       if (!deposit?.provider_reference) return reply(409, { error: "Provider-confirmed deposit reference is missing" });
       const adapter = getMarketplacePaymentProvider(deposit.provider);
       if (!adapter) return reply(503, { error: "No approved deposit-claim adapter is registered" });
-      const { data, error } = await service.rpc("request_deposit_claim_application", {
+      const { data, error } = await userClient.rpc("request_deposit_claim_application", {
         p_claim_id: claimId, p_idempotency_key: idempotency,
       });
       if (error) return reply(400, { error: error.message });
