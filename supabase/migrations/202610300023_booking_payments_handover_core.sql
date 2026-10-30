@@ -1,5 +1,8 @@
 begin;
 
+alter table public.payments
+  add column if not exists provider_checkout_url text;
+
 alter table public.bookings
   add column if not exists requested_copy_id uuid references public.book_copies(id) on delete restrict,
   add column if not exists requested_handover_location_id uuid references public.handover_locations(id) on delete restrict,
