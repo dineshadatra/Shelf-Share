@@ -154,7 +154,8 @@ Deno.serve(async (req) => {
       p_action: action === "assign" ? "assign" : String(payload.decision ?? ""),
       p_reason: typeof payload.reason === "string" ? payload.reason : null,
       p_internal_notes: typeof payload.internal_notes === "string" ? payload.internal_notes : null,
-      p_assignee: typeof payload.assignee_id === "string" ? payload.assignee_id : null
+      p_assignee: typeof payload.assignee_id === "string" ? payload.assignee_id : null,
+      p_address_verified: payload.address_verified === true
     };
     let suspendedUserId: string | null = null;
     if (action === "decision" && payload.decision === "suspend") {
