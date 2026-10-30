@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeading } from "./page-helpers";
 import { supabase } from "@/lib/supabase";
+import { normalizeIsbn } from "@/lib/catalogue";
 import { useAuth } from "@/contexts/auth-context";
 
 type City = { id: string; name: string; state_name: string };
@@ -120,6 +121,11 @@ export default function DiscoverPage() {
 
   const load=useCallback(async(nextPage=1)=>{
     if(!supabase){setError("Connect Supabase to load the live catalogue.");return;}
+    let submittedFilters=filters;
+    if(isbn.trim()){
+      try{submittedFilters={...filters,isbn:normalizeIsbn(isbn)};}
+      catch(reason){setError(reason instanceof Error?reason.message:"Enter a valid ISBN-10 or ISBN-13.");return;}
+    }
     if(minPrice&&Number(minPrice)<0||maxPrice&&Number(maxPrice)<0||(minPrice&&maxPrice&&Number(maxPrice)<Number(minPrice))){
       setError("Enter a valid rental price range.");return;
     }
@@ -128,7 +134,7 @@ export default function DiscoverPage() {
     }
     setLoading(true);setError("");
     const {data:response,error:invokeError}=await supabase.functions.invoke("catalogue-api",{
-      body:{action:"discover",filters,page:nextPage,page_size:12},
+      body:{action:"discover",filters:submittedFilters,page:nextPage,page_size:12},
     });
     if(invokeError){setError(invokeError.message);setLoading(false);return;}
     setData(response as Result);setPage(nextPage);setLoading(false);
