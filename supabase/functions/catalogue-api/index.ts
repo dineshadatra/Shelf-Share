@@ -4,6 +4,7 @@ const url = Deno.env.get("SUPABASE_URL")!;
 const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const allowedOrigin = Deno.env.get("APP_ORIGIN") ?? "http://localhost:5173";
+let lastIsbnProviderRequestAt = 0;
 const headers = {
   "Access-Control-Allow-Origin": allowedOrigin,
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -73,6 +74,60 @@ Deno.serve(async (req) => {
   try { payload = await req.json(); } catch { return reply(400, { error: "Invalid JSON body" }); }
   const action = payload.action;
   const service = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  if (action === "isbn_lookup") {
+    const isbn13 = boundedText(payload.isbn13, 13) ?? "";
+    if (!/^\d{13}$/.test(isbn13)) return reply(400, { error: "A normalized ISBN-13 is required" });
+    const checksum = [...isbn13.slice(0, 12)].reduce((sum, digit, index) => sum + Number(digit) * (index % 2 === 0 ? 1 : 3), 0);
+    if (String((10 - (checksum % 10)) % 10) !== isbn13[12]) return reply(400, { error: "ISBN-13 checksum is invalid" });
+    const { data: cached } = await service.from("book_metadata_cache").select("metadata,expires_at")
+      .eq("isbn13", isbn13).maybeSingle();
+    if (cached && Date.parse(cached.expires_at) > Date.now()) return reply(200, cached.metadata as Record<string, unknown>);
+    if (Date.now() - lastIsbnProviderRequestAt < 1000) {
+      return reply(429, { error: "Please wait a moment before requesting another ISBN lookup. You can still enter the details manually." });
+    }
+    lastIsbnProviderRequestAt = Date.now();
+    const providerUrl = new URL("https://openlibrary.org/api/books");
+    providerUrl.searchParams.set("bibkeys", "ISBN:" + isbn13);
+    providerUrl.searchParams.set("jscmd", "data");
+    providerUrl.searchParams.set("format", "json");
+    let response: Response;
+    try {
+      response = await fetch(providerUrl, {
+        headers: { Accept: "application/json", "User-Agent": "ShelfShare/0.1 (+https://github.com/dineshadatra/Shelf-Share)" },
+        signal: AbortSignal.timeout(8000),
+      });
+    } catch {
+      return reply(502, { error: "The book metadata provider could not be reached. Enter the book details manually." });
+    }
+    if (response.status === 404) return reply(404, { error: "No catalogue record was found for this ISBN. Enter the book details manually." });
+    if (response.status === 429) return reply(429, { error: "The metadata provider is busy. Please wait or enter the details manually." });
+    if (!response.ok) return reply(502, { error: "Book metadata could not be retrieved. Enter the details manually." });
+    const body = await response.json() as Record<string, {
+      title?: string; authors?: Array<{ name?: string }>; publishers?: Array<{ name?: string }>;
+      publish_date?: string; edition_name?: string; languages?: Array<{ key?: string }>;
+      cover?: { large?: string; medium?: string; small?: string }; notes?: string | { value?: string };
+    }>;
+    const book = body["ISBN:" + isbn13];
+    if (!book) return reply(404, { error: "No catalogue record was found for this ISBN. Enter the book details manually." });
+    const year = book.publish_date?.match(/\b(1[4-9]\d{2}|20\d{2}|21\d{2}|2200)\b/)?.[1] ?? "";
+    const languageKey = book.languages?.[0]?.key ?? "";
+    const notes = typeof book.notes === "string" ? book.notes : book.notes?.value ?? "";
+    const metadata = {
+      isbn13, title: book.title ?? "",
+      authors: (book.authors ?? []).map((x) => x.name ?? "").filter(Boolean),
+      publisher: book.publishers?.[0]?.name ?? "", edition: book.edition_name ?? "",
+      publicationYear: year, languageCode: languageKey.split("/").filter(Boolean).pop() ?? "",
+      description: notes.slice(0, 4000),
+      coverImageUrl: book.cover?.large ?? book.cover?.medium ?? book.cover?.small ?? "",
+      metadataSource: "openlibrary", metadataSourceId: isbn13,
+    };
+    await service.from("book_metadata_cache").upsert({
+      isbn13, provider: "openlibrary", metadata, fetched_at: new Date().toISOString(),
+      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+    }, { onConflict: "isbn13" });
+    return reply(200, metadata);
+  }
 
   if (action === "discover") {
     const filters = payload.filters && typeof payload.filters === "object"
