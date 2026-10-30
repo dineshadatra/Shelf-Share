@@ -53,10 +53,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
     if (error) {
       setVerification(null);
+      setVerificationCase(null);
       return;
     }
     setVerification(data as VerificationSummary | null);
-  };
+    const { data: caseRows } = await supabase.rpc("get_my_verification_case");
+    setVerificationCase((caseRows?.[0] as VerificationCaseSummary | undefined) ?? null);
+  }, []);
 
   useEffect(() => {
     if (!supabase) {
@@ -82,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       listener.subscription.unsubscribe();
     };
-  }, []);
+  }, [refreshVerification]);
 
   const value = useMemo<AuthState>(() => ({
     configured: isSupabaseConfigured,
@@ -98,6 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) throw error;
       setSession(null);
       setVerification(null);
+      setVerificationCase(null);
     }
   }), [loading, session, verification, verificationCase, refreshVerification]);
 
