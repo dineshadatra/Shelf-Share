@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { LiveCameraCapture } from "@/components/auth/live-camera-capture";
+import { useAuth } from "@/contexts/auth-context";
 import { supabase, normaliseIndianPhone, userFacingAuthError } from "@/lib/supabase";
 
 type RegistrationPolicy = { terms_version: string; privacy_version: string; terms_url: string; privacy_url: string };
 
 export default function RegisterPage() {
+  const { user } = useAuth();
   const [policy, setPolicy] = useState<RegistrationPolicy | null>(null);
   const [policyLoading, setPolicyLoading] = useState(true);
   const [phone, setPhone] = useState("");
@@ -25,6 +27,14 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!user || !supabase) return;
+    setPhone(user.phone ?? "");
+    setNormalisedPhone(user.phone ?? "");
+    supabase.from("profiles").select("id").eq("id", user.id).maybeSingle()
+      .then(({ data }) => { if (data?.id) navigate("/reader", { replace: true }); });
+  }, [user?.id, user?.phone, navigate]);
 
   useEffect(() => {
     if (!supabase) { setPolicyLoading(false); return; }
@@ -49,6 +59,7 @@ export default function RegisterPage() {
     if (!policy) { setError("Registration is paused until approved Terms and Privacy versions are configured."); return; }
     if (!accepted) { setError("Please accept the current Terms and Privacy Notice before continuing."); return; }
     if (!name.trim() || !dob) { setError("Name and date of birth are required."); return; }
+    if (user) { setStep("camera"); return; }
     try {
       const formatted = normaliseIndianPhone(phone);
       setBusy(true);
@@ -104,14 +115,14 @@ export default function RegisterPage() {
       {step === "details" && <>
         <Input label="Your name" name="name" autoComplete="name" placeholder="Name as you’d like it shown" required maxLength={80} value={name} onChange={(event) => setName(event.target.value)}/>
         <Input label="Date of birth" name="dob" type="date" required max={new Date().toISOString().slice(0,10)} value={dob} onChange={(event) => setDob(event.target.value)} hint="You must be at least 18 years old to register."/>
-        <Input label="Indian mobile number" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" required value={phone} onChange={(event) => setPhone(event.target.value)} hint="Mobile OTP only. No email OTP is used."/>
+        <Input label="Indian mobile number" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" required readOnly={Boolean(user)} value={phone} onChange={(event) => setPhone(event.target.value)} hint={user ? "This number is already verified for your current session." : "Mobile OTP only. No email OTP is used."}/>
         <div className="legal-consent">
           {policyLoading ? <p>Checking current legal terms…</p> : policy ? <>
             <label className="check-row"><input type="checkbox" checked={accepted} onChange={(event) => setAccepted(event.target.checked)}/><span>I have read and agree to the <a href={policy.terms_url} target="_blank" rel="noreferrer">Terms of Service and Rental Agreement</a> and <a href={policy.privacy_url} target="_blank" rel="noreferrer">Privacy Notice</a>.</span></label>
             <small>Terms {policy.terms_version} · Privacy {policy.privacy_version}</small>
           </> : <Alert tone="warning">Registration is disabled until ShelfShare publishes and activates approved Terms and Privacy documents.</Alert>}
         </div>
-        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted}><Smartphone size={17}/>{busy ? "Sending OTP…" : "Create account with OTP"}</Button>
+        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted}><Smartphone size={17}/>{busy ? "Sending OTP…" : user ? "Continue to live photo" : "Create account with OTP"}</Button>
       </>}
       {step === "otp" && <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
