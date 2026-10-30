@@ -482,7 +482,7 @@ begin
     values(v_payment.booking_id,p_payment_id,p_actor_id,v_payment.provider,p_idempotency_key,p_amount_paise,p_reason_code)
     returning id into v_refund;
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
-    values('refund',v_refund,'refund_requested',jsonb_build_object('refund_id',v_refund,'payment_id',p_payment_id,'amount_paise',p_amount_paise),
+    values('refund',v_refund,'refund_requested',jsonb_build_object('refund_id',v_refund,'payment_id',p_payment_id,'amount_paise',p_amount_paise,'provider',v_payment.provider),
       'refund-outbox:'||p_idempotency_key) on conflict(idempotency_key) do nothing;
   return v_refund;
 end;
@@ -784,7 +784,7 @@ begin
   update public.owner_earnings set status='processing' where id=p_earning_id;
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
     values('payout',v_payout,'owner_payout_requested',
-      jsonb_build_object('payout_id',v_payout,'provider_vendor_reference',v_vendor.provider_vendor_reference),
+      jsonb_build_object('payout_id',v_payout,'provider',p_provider,'provider_vendor_reference',v_vendor.provider_vendor_reference),
       'owner-payout:'||p_idempotency_key) on conflict(idempotency_key) do nothing;
   return v_payout;
 end;
