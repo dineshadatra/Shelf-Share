@@ -54,8 +54,7 @@ export default function ProfilePage() {
       const { error: verifyError } = await supabase.auth.verifyOtp({
         phone: normalisedPhone,
         token: otp,
-        type: "phone_change",
-        options: captchaToken ? { captchaToken } : undefined
+        type: "phone_change"
       });
       if (verifyError) throw verifyError;
       const { error: syncError } = await supabase.rpc("sync_verified_phone");
@@ -86,7 +85,7 @@ export default function ProfilePage() {
           <h3><Smartphone size={17}/> Change mobile number</h3>
           {changeStep === "phone" ? <>
             <Input label="New Indian mobile number" name="new-phone" type="tel" placeholder="+91 98765 43210" value={newPhone} onChange={(event) => setNewPhone(event.target.value)} hint="A confirmation OTP will be sent to the new number. Your current number remains active until confirmation."/>
-            <Button variant="outline" disabled={busy || !newPhone.trim() || (captchaRequired && !captchaToken)} onClick={() => void sendPhoneChangeOtp()}>{busy ? "Sending…" : "Verify new number"}</Button>
+            <Button variant="outline" disabled={busy || !newPhone.trim()} onClick={() => void sendPhoneChangeOtp()}>{busy ? "Sending…" : "Verify new number"}</Button>
           </> : <>
             <Input label={`Confirmation code sent to ${normalisedPhone}`} name="phone-change-otp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\\D/g,"").slice(0,6))}/>
             <div className="admin-case-actions"><Button disabled={busy || otp.length !== 6} onClick={() => void confirmPhoneChange()}>{busy ? "Verifying…" : "Confirm mobile change"}</Button><Button variant="ghost" onClick={() => { setChangeStep("phone"); setOtp(""); }}>Cancel</Button></div>
