@@ -79,6 +79,7 @@ export default function DiscoverPage() {
   const [saved,setSaved]=useState<string[]>([]);
   const [savingId,setSavingId]=useState("");
   const [nearbyRequested,setNearbyRequested]=useState(false);
+  const [applyWeekend,setApplyWeekend]=useState(false);
   const initialLoadDone=useRef(false);
   const previousAutoSearch=useRef<{sort:string;city:string;coordinates:{latitude:number;longitude:number}|null}>({sort,city,coordinates});
 
@@ -140,6 +141,8 @@ export default function DiscoverPage() {
     if(initialLoadDone.current && changed) void load(1);
   },[sort,city,coordinates,load]);
 
+  useEffect(()=>{ if(applyWeekend && fromDate && untilDate){ void load(1); setApplyWeekend(false); } },[applyWeekend,fromDate,untilDate,load]);
+
   const locationOptIn=()=>{
     if(!navigator.geolocation){setLocationMessage("Location is not available in this browser. You can still browse by locality.");return;}
     setLocationMessage("Waiting for your permission…");
@@ -169,7 +172,7 @@ export default function DiscoverPage() {
   };
   const submitSearch=(event:FormEvent)=>{event.preventDefault();void load(1);};
   const pageCount=Math.max(1,Math.ceil(data.total/Math.max(1,data.page_size)));
-  const mapItems=data.results.filter(x=>x.latitude!=null&&x.longitude!=null);
+  const mapItems=data.results.filter(x=>x.latitude!=null&&x.longitude!=null);\n  const mapBox=useMemo(()=>{if(!mapItems.length)return null;const latitudes=mapItems.map(x=>x.latitude as number);const longitudes=mapItems.map(x=>x.longitude as number);const pad=0.015;return {west:Math.min(...longitudes)-pad,south:Math.min(...latitudes)-pad,east:Math.max(...longitudes)+pad,north:Math.max(...latitudes)+pad};},[mapItems]);
 
   return <PublicLayout><main className="page-container public-page discover-page">
     <PageHeading eyebrow="THE NEIGHBOURHOOD SHELF" title="Find a book worth reading." description="Explore physical copies shared by verified owners in your city. Search freely; location access is always optional."/>
@@ -210,7 +213,7 @@ export default function DiscoverPage() {
     {loading?<div className="discovery-loading"><div/><div/><div/><div/></div>:data.results.length===0?<EmptyState title="No books found" description="Try another city, locality or set of filters. You can also leave a waitlist for a title."/>:
       mapView?<section className="discovery-map-view"><div className="discovery-map-heading"><Map size={18}/><div><strong>Approximate locality map</strong><p>Markers represent locality centres, not an owner’s home or exact handover point.</p></div></div>
         {mapItems.length===0?<Alert tone="info">No locality map coordinates have been configured for these results. Switch to List view or choose another area.</Alert>:
-          <div className="discovery-map-pins">{mapItems.map(item=><a key={item.id} className="discovery-map-pin" href={"https://www.openstreetmap.org/?mlat="+item.latitude+"&mlon="+item.longitude+"#map=15/"+item.latitude+"/"+item.longitude} target="_blank" rel="noreferrer"><MapPin size={18}/><span><strong>{item.title}</strong><small>{item.locality}, {item.city}</small></span><b>{INR.format(item.price_paise/100)}</b></a>)}</div>}
+          <div className="discovery-map-embed"><iframe title="OpenStreetMap showing approximate book localities" loading="lazy" src={"https://www.openstreetmap.org/export/embed.html?bbox="+mapBox!.west+"%2C"+mapBox!.south+"%2C"+mapBox!.east+"%2C"+mapBox!.north+"&layer=mapnik"}/></div><div className="discovery-map-pins">{mapItems.map(item=><a key={item.id} className="discovery-map-pin" href={"https://www.openstreetmap.org/?mlat="+item.latitude+"&mlon="+item.longitude+"#map=15/"+item.latitude+"/"+item.longitude} target="_blank" rel="noreferrer"><MapPin size={18}/><span><strong>{item.title}</strong><small>{item.locality}, {item.city}</small></span><b>{INR.format(item.price_paise/100)}</b></a>)}</div>}
       </section>:
       <div className="book-grid discovery-book-grid">{data.results.map(item=><article className="book-card live-book-card" key={item.id}>
         <div className="book-card-image"><Link to={"/books/"+item.id}><img className="live-book-cover" src={item.images.find(x=>x.is_cover)?.url??item.images[0]?.url??item.cover_image_url??""} alt={item.title+" cover"} loading="lazy"/></Link><button type="button" className={"save-book "+(saved.includes(item.book_title_id)?"saved":"")} title="Add to wishlist" aria-label="Toggle wishlist" disabled={savingId===item.id} onClick={()=>void toggleWishlist(item)}><Heart size={17} fill={saved.includes(item.book_title_id)?"currentColor":"none"}/></button><span className="book-card-tag">{item.genres||"Book"}</span></div>
