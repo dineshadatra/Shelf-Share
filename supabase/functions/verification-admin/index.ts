@@ -125,6 +125,13 @@ Deno.serve(async (req) => {
       .eq("verification_case_id", caseId)
       .maybeSingle();
     if (fileError || !file) return reply(404, { error: "Verification file not found" });
+    const { data: verificationCase } = await service.from("verification_cases")
+      .select("user_id")
+      .eq("id", caseId)
+      .maybeSingle();
+    if (!verificationCase || file.user_id !== verificationCase.user_id) {
+      return reply(404, { error: "Verification file not found" });
+    }
     if (file.user_id === user.id) return reply(403, { error: "Reviewers cannot preview their own verification file" });
     const { data: signed, error: signedError } = await service.storage
       .from(file.storage_bucket)
