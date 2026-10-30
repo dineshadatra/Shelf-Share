@@ -1,6 +1,6 @@
 # Payment Rules — ShelfShare
 
-**Important:** This is a product/ledger specification, not permission to perform payment aggregation. ShelfShare must use an eligible RBI-authorised provider and must not pool/hold customer funds in its ordinary bank account or create an informal wallet/escrow.
+**Important:** This is a product/ledger specification, not permission to perform payment aggregation. ShelfShare must use an eligible RBI-authorised provider and must not pool/hold customer funds in its ordinary bank account or create an informal wallet/escrow. The application now has a provider-independent adapter contract and a retryable outbox; no concrete adapter is registered or enabled. Payment initiation, deposit collection, release and payouts therefore remain unavailable until the exact peer-to-peer physical-book rental marketplace has written provider, legal and accounting approvals.
 
 ## 1. Payment categories
 
@@ -36,7 +36,7 @@ Maintain distinct obligations and ledger accounts for:
 
 ## 3. Payment intent and capture
 
-1. Booking transaction creates internal payment obligation and inventory hold.
+1. Owner acceptance and both parties’ current rental-agreement acceptance are required before checkout. The trusted transaction creates an internal payment obligation and extends the existing inventory hold.
 2. Backend calls provider through adapter using unique merchant reference/idempotency key.
 3. Store provider intent reference and expected amount/currency.
 4. Accept signed provider webhook or server-to-server status query.
