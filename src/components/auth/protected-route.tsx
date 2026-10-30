@@ -22,10 +22,11 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
       return;
     }
     setCheckingProfile(true);
-    supabase.from("profiles").select("id").eq("id", user.id).maybeSingle()
+    supabase.from("profiles").select("id,account_status").eq("id", user.id).maybeSingle()
       .then(({ data, error }) => {
         if (!active) return;
         setProfileExists(!error && Boolean(data?.id));
+        setAccountStatus(!error && data?.account_status ? data.account_status : null);
       })
       .finally(() => { if (active) setCheckingProfile(false); });
     return () => { active = false; };
@@ -57,6 +58,7 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
   if (loading || checkingProfile || (Boolean(user) && profileExists === null) || checkingStaff) return <div className="page-container" style={{ paddingBlock: 80 }}>Checking your secure account…</div>;
   if (!user) return <Navigate to={staffOnly ? "/admin/login" : "/login"} replace state={{ from: location.pathname }} />;
   if (!profileExists) return <Navigate to="/register?resume=1" replace />;
+  if (accountStatus !== "active") return <main className="page-container" style={{ paddingBlock: 60 }}><Alert tone="warning" title="Account access is restricted">Your ShelfShare account is not active. Contact ShelfShare support for next steps.</Alert></main>;
   if (staffOnly && !staffAllowed) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
