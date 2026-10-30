@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, Compass, Heart, ListFilter, LocateFixed, Map, MapPin, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { PublicLayout } from "@/layouts/public-layout";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { EmptyState } from "@/components/ui/empty-state";
