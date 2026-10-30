@@ -97,6 +97,22 @@ async function handleWebhook(req: Request): Promise<Response> {
   const payloadSha256 = await sha256Hex(rawBody);
   const eventType = event.eventType;
 
+  if (["chargeback.won", "chargeback.lost", "dispute.won", "dispute.lost"].includes(eventType)) {
+    const { data: payment } = await service.from("payments").select("id,merchant_reference,provider_payment_id")
+      .eq("provider", providerCode)
+      .or(event.merchantReference ? "merchant_reference.eq." + event.merchantReference : "provider_payment_id.eq." + event.providerPaymentReference)
+      .maybeSingle();
+    if (!payment || !event.providerDisputeReference) return reply(404, { error: "Chargeback or payment reference not found" });
+    const { data, error } = await service.rpc("apply_verified_chargeback_resolution", {
+      p_provider: providerCode, p_event_id: event.eventId, p_payment_id: payment.id,
+      p_dispute_reference: event.providerDisputeReference,
+      p_result: eventType.endsWith(".won") ? "won" : "lost",
+      p_amount_paise: event.amountPaise, p_currency: event.currency, p_payload_sha256: payloadSha256,
+    });
+    if (error) return reply(500, { error: "Verified chargeback resolution could not be applied; provider may retry" });
+    return reply(200, { accepted: true, result: data });
+  }
+
   if (eventType.startsWith("payment.") || eventType === "order.paid" || eventType === "order.failed"
     || eventType === "chargeback.opened" || eventType === "dispute.opened") {
     let query = service.from("payments").select("id,merchant_reference,provider_payment_id,amount_paise,currency")
@@ -531,6 +547,29 @@ Deno.serve(async (req) => {
       if (error) return reply(400, { error: error.message });
       const result = await adapter.applyDepositClaim(deposit.provider_reference, claim.decision_amount_paise, claimId, idempotency);
       return reply(202, { outbox_event_id: data, status: "claim_hold_pending", provider_status: result.status, provider_confirmed: false });
+    }
+
+    if (action === "request_return") {
+      const bookingId = text(payload.booking_id, 64);
+      if (!bookingId) return reply(400, { error: "Booking identifier is required" });
+      await getMyBooking(userClient, user.id, bookingId);
+      const { error } = await userClient.rpc("request_book_return", { p_booking_id: bookingId });
+      if (error) return reply(400, { error: error.message });
+      return reply(200, { requested: true, status: "return_pending" });
+    }
+
+    if (action === "payment_capabilities") {
+      const { data: approvals, error } = await service.from("payment_provider_approvals")
+        .select("provider_code,enabled_for_rent,enabled_for_deposits,supports_refunds,supports_reconciliation,expires_at")
+        .eq("enabled_for_rent", true);
+      if (error) return reply(500, { error: "Unable to load payment capability status" });
+      const items = (approvals ?? []).map((item) => ({
+        provider: item.provider_code,
+        adapter_registered: Boolean(getMarketplacePaymentProvider(item.provider_code)),
+        approved: !item.expires_at || Date.parse(item.expires_at) > Date.now(),
+        deposits_approved: item.enabled_for_deposits === true,
+      }));
+      return reply(200, { providers: items, checkout_available: items.some((x) => x.adapter_registered && x.approved) });
     }
 
     if (action === "report_incident") {
