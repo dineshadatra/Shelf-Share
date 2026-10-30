@@ -7,8 +7,27 @@ import { Alert } from "@/components/ui/alert";
 export function ProtectedRoute({ children, staffOnly = false }: { children: ReactNode; staffOnly?: boolean }) {
   const { configured, loading, user } = useAuth();
   const location = useLocation();
+  const [profileExists, setProfileExists] = useState<boolean | null>(null);
+  const [checkingProfile, setCheckingProfile] = useState(true);
   const [staffAllowed, setStaffAllowed] = useState<boolean | null>(staffOnly ? null : true);
   const [checkingStaff, setCheckingStaff] = useState(staffOnly);
+
+  useEffect(() => {
+    let active = true;
+    if (!user || !supabase) {
+      setProfileExists(null);
+      setCheckingProfile(false);
+      return;
+    }
+    setCheckingProfile(true);
+    supabase.from("profiles").select("id").eq("id", user.id).maybeSingle()
+      .then(({ data, error }) => {
+        if (!active) return;
+        setProfileExists(!error && Boolean(data?.id));
+      })
+      .finally(() => { if (active) setCheckingProfile(false); });
+    return () => { active = false; };
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -35,8 +54,9 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
       </Alert>
     </main>;
   }
-  if (loading || checkingStaff) return <div className="page-container" style={{ paddingBlock: 80 }}>Checking your secure session…</div>;
+  if (loading || checkingProfile || checkingStaff) return <div className="page-container" style={{ paddingBlock: 80 }}>Checking your secure account…</div>;
   if (!user) return <Navigate to={staffOnly ? "/admin/login" : "/login"} replace state={{ from: location.pathname }} />;
+  if (!profileExists) return <Navigate to="/register?resume=1" replace />;
   if (staffOnly && !staffAllowed) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
