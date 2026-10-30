@@ -46,6 +46,8 @@ export default function RentalHistoryPage(){
   const [secrets,setSecrets]=useState<Record<string,Secret>>({});
   const [otpValues,setOtpValues]=useState<Record<string,string>>({});
   const [incidentText,setIncidentText]=useState<Record<string,string>>({});
+  const [disputeReason,setDisputeReason]=useState<Record<string,string>>({});
+  const [disputeDescription,setDisputeDescription]=useState<Record<string,string>>({});
   const [scannerSession,setScannerSession]=useState<string|null>(null);
   const [loading,setLoading]=useState(true);
   const [busyId,setBusyId]=useState<string|null>(null);
@@ -117,6 +119,13 @@ export default function RentalHistoryPage(){
     const result=await invoke("start_handover",{booking_id:booking.id,handover_type:type});
     setSecrets(s=>({...s,[booking.id]:{sessionId:result.session_id,token:result.qr_token,otp:result.otp,expiresAt:result.expires_at}}));
     setNotice(type==="collection"?"One-time collection QR created. The other participant must scan it, both parties must acknowledge condition and both must upload photographs.":"One-time return QR created. The other participant must scan it, both parties must acknowledge return condition and both must upload photographs.");
+  });
+  const openDispute=(booking:Booking)=>run(booking.id,async()=>{
+    const reason=disputeReason[booking.id]?.trim();
+    const description=disputeDescription[booking.id]?.trim();
+    if(!reason||reason.length<3||!description||description.length<20)throw new Error("Provide a dispute reason and at least 20 characters describing the issue.");
+    await invoke("open_dispute",{booking_id:booking.id,reason_code:reason,description});
+    setNotice("Dispute opened. Settlement and deposit release are blocked until review. Any provider deposit hold is separately confirmed.");
   });
   const requestReturn=(booking:Booking)=>run(booking.id,async()=>{
     await invoke("request_return",{booking_id:booking.id});
@@ -254,6 +263,23 @@ export default function RentalHistoryPage(){
         {booking.is_reader&&<Button variant="outline" onClick={()=>void requestReturn(booking)} disabled={busyId===booking.id}>Request return</Button>}</div>}
       {booking.status==="return_pending"&&<Alert tone="info">Return has been requested. Complete the QR/OTP flow and upload return-condition photographs from both participants.</Alert>}
       {booking.status==="disputed"&&<Alert tone="warning"><ShieldAlert size={15}/> This booking is under dispute/reconciliation. Financial release and settlement remain blocked while the issue is open.</Alert>}
+      {["confirmed","collection_pending","active","return_pending","completed"].includes(booking.status)&&<div className="surface" style={{padding:"1rem",display:"grid",gap:".5rem"}}>
+        <strong>Open a rental dispute</strong>
+        <label className="ss-field"><span className="ss-label">Reason code</span>
+          <select className="ss-input" value={disputeReason[booking.id]??""} onChange={e=>setDisputeReason(v=>({...v,[booking.id]:e.target.value}))}>
+            <option value="">Select a reason</option><option value="condition_mismatch">Book condition mismatch</option>
+            <option value="handover_safety">Handover or safety issue</option><option value="non_return">Book not returned</option>
+            <option value="payment_issue">Payment or refund issue</option><option value="other">Other</option>
+          </select>
+        </label>
+        <label className="ss-field"><span className="ss-label">Explain what happened</span>
+          <textarea className="ss-input" rows={3} minLength={20} value={disputeDescription[booking.id]??""}
+            onChange={e=>setDisputeDescription(v=>({...v,[booking.id]:e.target.value}))}
+            placeholder="Describe the issue, dates, evidence and what outcome you are requesting."/>
+        </label>
+        <Button variant="outline" onClick={()=>void openDispute(booking)} disabled={busyId===booking.id}>Open dispute</Button>
+        <p className="muted">Opening a dispute does not deduct or confiscate any deposit. Any provider-side hold requires a separate signed provider confirmation.</p>
+      </div>}
       {booking.status==="completed"&&<Alert tone="success">Return closed on {dateTime(booking.completed_at)}. Any deposit release remains subject to the approved provider custody, inspection/claim window and dispute checks.</Alert>}
       {ACTIVE.includes(booking.status)&&renderHandover(booking)}
       {booking.status==="confirmed"&&<div style={{display:"grid",gap:".5rem"}}>
