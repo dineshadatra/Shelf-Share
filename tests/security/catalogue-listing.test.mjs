@@ -7,6 +7,7 @@ const listingSql = await read("../../supabase/migrations/202610300009_catalogue_
 const hardeningSql = await read("../../supabase/migrations/202610300010_catalogue_workflows_hardening.sql");
 const fixesSql = await read("../../supabase/migrations/202610300011_catalogue_listing_fixes.sql");
 const auditSql = await read("../../supabase/migrations/202610300012_catalogue_moderation_audit_fixes.sql");
+const cacheSql = await read("../../supabase/migrations/202610300013_isbn_metadata_cache.sql");
 const api = await read("../../supabase/functions/catalogue-api/index.ts");
 const isbn = await read("../../src/lib/catalogue.ts");
 const listingUi = await read("../../src/pages/list-book-page.tsx");
@@ -78,7 +79,8 @@ test("the browser never receives service role keys or raw evidence storage keys"
 test("ISBN-10 and ISBN-13 checksums are validated with manual fallback", () => {
   assert.match(isbn, /normalizeIsbn/);
   assert.match(isbn, /isbn13CheckDigit/);
-  assert.match(isbn, /No catalogue record was found/);
+  assert.match(isbn, /fetchOpenLibraryMetadata/);
+  assert.match(api, /No catalogue record was found/);
   assert.match(listingUi, /Enter the book details manually/);
 });
 
@@ -128,4 +130,14 @@ test("moderation route and identity-document route use separate role gates", () 
   assert.match(guards, /moderationOnly/);
   assert.match(guards, /moderator_me/);
   assert.match(guards, /verification-admin/);
+});
+
+test("ISBN lookup is user-initiated, backend proxied and cached", () => {
+  assert.match(api, /action === "isbn_lookup"/);
+  assert.match(api, /book_metadata_cache/);
+  assert.match(api, /expires_at/);
+  assert.match(api, /30 \* 24 \* 60 \* 60 \* 1000/);
+  assert.match(cacheSql, /enable row level security/);
+  assert.match(cacheSql, /from public,anon,authenticated/);
+  assert.match(isbn, /functions.invoke\("catalogue-api"/);
 });
