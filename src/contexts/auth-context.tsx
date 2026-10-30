@@ -10,12 +10,22 @@ type VerificationSummary = {
   address_verified_at: string | null;
 };
 
+type VerificationCaseSummary = {
+  case_id: string;
+  case_status: string;
+  submitted_at: string;
+  reviewed_at: string | null;
+  decision_reason: string | null;
+  requested_information: string | null;
+};
+
 type AuthState = {
   configured: boolean;
   loading: boolean;
   session: Session | null;
   user: User | null;
   verification: VerificationSummary | null;
+  verificationCase: VerificationCaseSummary | null;
   refreshVerification: () => Promise<void>;
   signOut: () => Promise<void>;
 };
@@ -26,12 +36,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const [verification, setVerification] = useState<VerificationSummary | null>(null);
+  const [verificationCase, setVerificationCase] = useState<VerificationCaseSummary | null>(null);
 
   const refreshVerification = useCallback(async () => {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
       setVerification(null);
+      setVerificationCase(null);
       return;
     }
     const { data, error } = await supabase
@@ -61,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: listener } = supabase.auth.onAuthStateChange((event, nextSession) => {
       if (!mounted) return;
       setSession(nextSession);
-      if (event === "SIGNED_OUT") setVerification(null);
+      if (event === "SIGNED_OUT") { setVerification(null); setVerificationCase(null); }
       if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "USER_UPDATED") {
         queueMicrotask(() => { void refreshVerification(); });
       }
@@ -78,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     session,
     user: session?.user ?? null,
     verification,
+    verificationCase,
     refreshVerification,
     signOut: async () => {
       if (!supabase) throw new Error("Supabase is not configured.");
@@ -86,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setVerification(null);
     }
-  }), [loading, session, verification, refreshVerification]);
+  }), [loading, session, verification, verificationCase, refreshVerification]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
