@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
         const { error: updateError } = await service.from("payments").update({
           provider_order_id: intent.providerOrderReference,
           provider_status: intent.status,
+          provider_checkout_url: intent.checkoutUrl,
         }).eq("id", payment.id);
         if (updateError) throw new Error("payment_reference_persist_failed");
       } else if (eventType === "refund_requested") {
