@@ -70,7 +70,7 @@ async function hasRole(service: SupabaseClient, userId: string, allowed: string[
   return (data ?? []).length > 0;
 }
 
-async function getMyBooking(service: SupabaseClient, userClient: SupabaseClient, userId: string, bookingId: string) {
+async function getMyBooking(userClient: SupabaseClient, userId: string, bookingId: string) {
   const { data, error } = await userClient.rpc("get_my_booking_workspace");
   if (error) throw error;
   const rows = Array.isArray(data) ? data as Json[] : [];
@@ -218,7 +218,7 @@ Deno.serve(async (req) => {
     if (action === "owner_accept") {
       const bookingId = text(payload.booking_id, 64);
       if (!bookingId) return reply(400, { error: "Booking identifier is required" });
-      await getMyBooking(service, userClient, user.id, bookingId);
+      await getMyBooking(userClient, user.id, bookingId);
       const { error } = await userClient.rpc("accept_book_booking_request", { p_booking_id: bookingId });
       if (error) return reply(400, { error: error.message });
       return reply(200, { accepted: true, status: "owner_accepted", payment_started: false });
@@ -228,7 +228,7 @@ Deno.serve(async (req) => {
       const bookingId = text(payload.booking_id, 64);
       const reason = text(payload.reason, 500);
       if (!bookingId || !reason || reason.length < 5) return reply(400, { error: "Booking and decline reason are required" });
-      await getMyBooking(service, userClient, user.id, bookingId);
+      await getMyBooking(userClient, user.id, bookingId);
       const { error } = await userClient.rpc("decline_book_booking_request", { p_booking_id: bookingId, p_reason: reason });
       if (error) return reply(400, { error: error.message });
       return reply(200, { declined: true, status: "cancelled" });
@@ -238,7 +238,7 @@ Deno.serve(async (req) => {
       const bookingId = text(payload.booking_id, 64);
       const providerCode = text(payload.provider, 40)?.toLowerCase();
       if (!bookingId || !providerCode) return reply(400, { error: "Booking and provider are required" });
-      const booking = await getMyBooking(service, userClient, user.id, bookingId);
+      const booking = await getMyBooking(userClient, user.id, bookingId);
       if (booking.is_reader !== true) return reply(403, { error: "Only the requesting reader may start payment" });
       const adapter = getMarketplacePaymentProvider(providerCode);
       if (!adapter) return reply(503, { error: "Online payment is unavailable until an approved provider adapter is deployed" });
@@ -389,7 +389,7 @@ Deno.serve(async (req) => {
       const bookingId = text(payload.booking_id, 64);
       const handoverType = text(payload.handover_type, 20);
       if (!bookingId || !handoverType || !["collection", "return"].includes(handoverType)) return reply(400, { error: "Booking and handover type are required" });
-      await getMyBooking(service, userClient, user.id, bookingId);
+      await getMyBooking(userClient, user.id, bookingId);
       if (handoverPepper.length < 32) return reply(503, { error: "One-time handover credential service is not configured" });
       const { data: config } = await service.from("booking_workflow_configuration").select("handover_ttl_seconds")
         .eq("id", true).eq("is_active", true).maybeSingle();
@@ -449,9 +449,13 @@ Deno.serve(async (req) => {
       if (!session || session.status === "completed" || Date.parse(session.expires_at) <= Date.now()) return reply(410, { error: "Handover session expired" });
       const expectedPrefix = user.id + "/" + session.booking_id + "/" + sessionId + "/";
       if (!objectKey.startsWith(expectedPrefix)) return reply(403, { error: "Evidence object path is not scoped to this participant and booking" });
-      const { data: storedObject } = await service.schema("storage").from("objects").select("id")
-        .eq("bucket_id", "rental-evidence-private").eq("name", objectKey).maybeSingle();
-      if (!storedObject) return reply(404, { error: "Uploaded private evidence was not found" });
+      const folder = expectedPrefix.slice(0, -1);
+      const filename = objectKey.slice(expectedPrefix.length);
+      const { data: storedObjects, error: storageError } = await service.storage
+        .from("rental-evidence-private").list(folder, { search: filename, limit: 10 });
+      if (storageError || !(storedObjects ?? []).some((x) => x.name === filename)) {
+        return reply(404, { error: "Uploaded private evidence was not found" });
+      }
       const { data, error } = await service.rpc("register_handover_condition_photo", {
         p_session_id: sessionId, p_actor_id: user.id, p_object_key: objectKey,
         p_sha256: sha, p_caption: caption,
@@ -464,9 +468,19 @@ Deno.serve(async (req) => {
       const depositId = text(payload.deposit_id, 64);
       const idempotency = text(payload.idempotency_key, 128);
       if (!depositId || !idempotency || idempotency.length < 16) return reply(400, { error: "Deposit and idempotency key are required" });
+      const { data: deposit } = await service.from("deposits").select("id,provider,provider_reference,status")
+        .eq("id", depositId).eq("payer_id", user.id).maybeSingle();
+      if (!deposit || !deposit.provider_reference || !["held_by_provider", "partially_applied"].includes(deposit.status)) {
+        return reply(409, { error: "No provider-confirmed releasable deposit was found" });
+      }
+      const adapter = getMarketplacePaymentProvider(deposit.provider);
+      if (!adapter) return reply(503, { error: "No approved deposit-release adapter is registered" });
       const { data, error } = await userClient.rpc("request_deposit_release", { p_deposit_id: depositId, p_idempotency_key: idempotency });
       if (error) return reply(400, { error: error.message });
-      return reply(202, { release_request_id: data, status: "release_pending", provider_confirmed: false });
+      const { data: request } = await service.from("deposit_release_requests").select("amount_paise").eq("id", data).maybeSingle();
+      const release = await adapter.releaseDeposit(deposit.provider_reference, idempotency);
+      return reply(202, { release_request_id: data, amount_paise: request?.amount_paise ?? null,
+        status: "release_pending", provider_status: release.status, provider_confirmed: false });
     }
 
     if (action === "submit_deposit_claim") {
@@ -503,11 +517,20 @@ Deno.serve(async (req) => {
       const claimId = text(payload.claim_id, 64);
       const idempotency = text(payload.idempotency_key, 128);
       if (!claimId || !idempotency || idempotency.length < 16) return reply(400, { error: "Claim and idempotency key are required" });
+      const { data: claim } = await service.from("deposit_claims").select("id,deposit_id,decision_amount_paise,status")
+        .eq("id", claimId).maybeSingle();
+      if (!claim || claim.status !== "approved" || !claim.decision_amount_paise) return reply(409, { error: "An approved deposit claim is required" });
+      const { data: deposit } = await service.from("deposits").select("provider,provider_reference")
+        .eq("id", claim.deposit_id).maybeSingle();
+      if (!deposit?.provider_reference) return reply(409, { error: "Provider-confirmed deposit reference is missing" });
+      const adapter = getMarketplacePaymentProvider(deposit.provider);
+      if (!adapter) return reply(503, { error: "No approved deposit-claim adapter is registered" });
       const { data, error } = await service.rpc("request_deposit_claim_application", {
         p_claim_id: claimId, p_idempotency_key: idempotency,
       });
       if (error) return reply(400, { error: error.message });
-      return reply(202, { outbox_event_id: data, status: "claim_hold_pending", provider_confirmed: false });
+      const result = await adapter.applyDepositClaim(deposit.provider_reference, claim.decision_amount_paise, claimId, idempotency);
+      return reply(202, { outbox_event_id: data, status: "claim_hold_pending", provider_status: result.status, provider_confirmed: false });
     }
 
     if (action === "report_incident") {
