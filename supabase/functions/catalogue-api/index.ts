@@ -30,10 +30,6 @@ function intIn(value: unknown, fallback: number, min: number, max: number): numb
   return Number.isInteger(n) ? Math.min(max, Math.max(min, n)) : fallback;
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : "Request could not be completed";
-}
-
 async function signImages(service: SupabaseClient, rows: Record<string, unknown>[], ttl = 300) {
   return await Promise.all(rows.map(async (row) => {
     const keys = Array.isArray(row.images) ? row.images as Record<string, unknown>[] : [];
@@ -47,7 +43,8 @@ async function signImages(service: SupabaseClient, rows: Record<string, unknown>
         is_cover: item.is_cover === true,
       } : null;
     }));
-    const { images: _ignored, ...safe } = row;
+    const safe = { ...row };
+    delete safe.images;
     return { ...safe, images: images.filter(Boolean) };
   }));
 }
@@ -143,7 +140,9 @@ Deno.serve(async (req) => {
     const result = (data ?? {}) as Record<string, unknown>;
     const rows = Array.isArray(result.results) ? result.results as Record<string, unknown>[] : [];
     const safeRows = rows.map((row) => {
-      const { requested_deposit_paise: _depositNotPublic, original_price_paise: _purchasePriceNotPublic, ...safe } = row;
+      const safe = { ...row };
+      delete safe.requested_deposit_paise;
+      delete safe.original_price_paise;
       return safe;
     });
     return reply(200, { ...result, results: await signImages(service, safeRows, 300) });
