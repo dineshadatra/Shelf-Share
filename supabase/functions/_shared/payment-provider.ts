@@ -126,7 +126,7 @@ export interface MarketplacePaymentProvider {
   fetchTransfer(transferReference: string): Promise<ProviderTransferSnapshot>;
 
   createDepositHold(request: ProviderDepositHoldRequest): Promise<ProviderDepositSnapshot>;
-  releaseDeposit(depositReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
+  releaseDeposit(depositReference: string, amountPaise: number, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
   holdDepositForDispute(depositReference: string, disputeReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
   applyDepositClaim(depositReference: string, amountPaise: number, claimReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
 
