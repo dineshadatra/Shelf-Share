@@ -92,7 +92,7 @@ alter table public.book_listing_moderation_events
   drop constraint if exists book_listing_moderation_events_action_check;
 alter table public.book_listing_moderation_events
   add constraint book_listing_moderation_events_action_check
-  check (action in ('draft_saved','submitted','approved','rejected','suspended','resumed','removed','edited','owner_paused'));
+  check (action in ('draft_saved','submitted','approved','rejected','suspended','resumed','removed','edited','owner_paused','approve','reject','suspend','remove'));
 
 create or replace function public.pause_my_book_listing(p_book_copy_id uuid)
 returns void
