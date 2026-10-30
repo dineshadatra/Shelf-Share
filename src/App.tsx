@@ -18,6 +18,7 @@ import ProfilePage from "@/pages/profile-page";
 import AdminLoginPage from "@/pages/admin-login-page";
 import AdminDashboardPage from "@/pages/admin-dashboard-page";
 import AdminVerificationQueuePage from "@/pages/admin-verification-queue-page";
+import AdminListingQueuePage from "@/pages/admin-listing-queue-page";
 import NotFoundPage from "@/pages/not-found-page";
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
     <Route path="/verification" element={<ProtectedRoute><VerificationPage /></ProtectedRoute>} />
     <Route path="/admin" element={<ProtectedRoute staffOnly><AdminDashboardPage /></ProtectedRoute>} />
     <Route path="/admin/verifications" element={<ProtectedRoute staffOnly><AdminVerificationQueuePage /></ProtectedRoute>} />
+    <Route path="/admin/listings" element={<ProtectedRoute staffOnly><AdminListingQueuePage /></ProtectedRoute>} />
     <Route path="*" element={<NotFoundPage />} />
   </Routes>;
 }
