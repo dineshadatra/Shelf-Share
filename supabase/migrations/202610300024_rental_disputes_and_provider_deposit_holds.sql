@@ -104,8 +104,8 @@ begin
       values(p_deposit_id,'provider_held',p_amount_paise,p_provider_reference,v_key) on conflict(idempotency_key) do nothing;
 
   elsif p_event_type in ('deposit.released','deposit.refunded') then
-    if v_deposit.status not in ('release_pending','refund_pending','held_by_provider','claim_hold','partially_applied') then
-      raise exception 'Deposit is not in a provider-releasable state';
+    if v_deposit.status not in ('release_pending','refund_pending') then
+      raise exception 'A server-authorised provider release request is required before release confirmation';
     end if;
     if exists(select 1 from public.disputes d where d.booking_id=v_deposit.booking_id and d.status<>'closed')
       or exists(select 1 from public.deposit_claims x where x.deposit_id=p_deposit_id and x.status not in ('rejected','closed')) then
@@ -140,8 +140,8 @@ begin
       on conflict(idempotency_key) do nothing;
 
   elsif p_event_type='deposit.claim_held' then
-    if v_deposit.status not in ('held_by_provider','claim_hold_pending') then
-      raise exception 'Deposit cannot be claim-held';
+    if v_deposit.status<>'claim_hold_pending' then
+      raise exception 'A server-authorised claim hold request is required before provider confirmation';
     end if;
     select * into v_claim from public.deposit_claims where id=p_claim_id and deposit_id=p_deposit_id for update;
     if not found or v_claim.status<>'approved' or v_claim.decision_amount_paise<>p_amount_paise then
@@ -158,6 +158,9 @@ begin
       on conflict(idempotency_key) do nothing;
 
   elsif p_event_type in ('deposit.amount_applied','deposit.claim_applied') then
+    if v_deposit.status not in ('claim_hold_pending','claim_hold') then
+      raise exception 'A provider-held, approved claim is required before applying deposit funds';
+    end if;
     select * into v_claim from public.deposit_claims where id=p_claim_id and deposit_id=p_deposit_id for update;
     if not found or v_claim.status<>'approved' or v_claim.decision_amount_paise is null
       or p_amount_paise<=0 or p_amount_paise>v_claim.decision_amount_paise then
