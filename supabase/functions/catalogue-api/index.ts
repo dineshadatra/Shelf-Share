@@ -206,7 +206,7 @@ Deno.serve(async (req) => {
     const queue = await Promise.all((copies ?? []).map(async (copy) => {
       const [images, details, pricing, locality, verification, history] = await Promise.all([
         service.from("book_images").select("id,object_key,alt_text,moderation_status,is_cover,display_order").eq("book_copy_id", copy.id).order("display_order"),
-        service.from("book_copy_listing_details").select("existing_damage,original_price_paise,original_price_evidence_note,requested_deposit_paise,ownership_declaration_type").eq("book_copy_id", copy.id).maybeSingle(),
+        service.from("book_copy_listing_details").select("existing_damage,original_price_paise,original_price_evidence_note,original_price_evidence_key,requested_deposit_paise,ownership_declaration_type").eq("book_copy_id", copy.id).maybeSingle(),
         service.from("book_pricing").select("rental_3d_paise,rental_7d_paise,rental_15d_paise,rental_30d_paise,custom_daily_paise").eq("book_copy_id", copy.id).is("effective_until", null).maybeSingle(),
         service.from("localities").select("name").eq("id", copy.locality_id).maybeSingle(),
         service.from("user_verifications").select("status,age_eligible").eq("user_id", copy.owner_id).maybeSingle(),
@@ -221,7 +221,7 @@ Deno.serve(async (req) => {
         title: titleMap.get(copy.book_title_id) ?? null,
         locality: locality.data?.name ?? "Unknown locality",
         verification: verification.data ?? null,
-        details: details.data ?? null,
+        details: details.data ? { existing_damage: details.data.existing_damage, original_price_paise: details.data.original_price_paise, original_price_evidence_note: details.data.original_price_evidence_note, requested_deposit_paise: details.data.requested_deposit_paise, ownership_declaration_type: details.data.ownership_declaration_type, has_original_price_evidence: Boolean(details.data.original_price_evidence_key) } : null,
         pricing: pricing.data ?? null,
         images: imageRows,
         history: history.data ?? [],
@@ -246,6 +246,22 @@ Deno.serve(async (req) => {
     if (auditError) return reply(500, { error: "Preview audit could not be recorded; access blocked" });
     const { data: signed, error: signedError } = await service.storage.from("book-listing-public").createSignedUrl(image.object_key, 60);
     if (signedError || !signed?.signedUrl) return reply(500, { error: "Unable to create secure photo preview" });
+    return reply(200, { signed_url: signed.signedUrl, expires_in_seconds: 60 });
+  }
+
+  if (action === "preview_price_evidence") {
+    const copyId = boundedText(payload.copy_id, 64);
+    const purpose = boundedText(payload.purpose, 500);
+    if (!copyId || !purpose || purpose.length < 5) return reply(400, { error: "Listing and review purpose are required" });
+    const { data: copy } = await service.from("book_copies").select("owner_id").eq("id", copyId).maybeSingle();
+    const { data: details } = await service.from("book_copy_listing_details").select("original_price_evidence_key").eq("book_copy_id", copyId).maybeSingle();
+    const objectKey = details?.original_price_evidence_key;
+    if (!copy || !objectKey) return reply(404, { error: "Original-price evidence not found" });
+    if (copy.owner_id === user.id) return reply(403, { error: "You cannot review your own listing evidence" });
+    const { error: auditError } = await service.from("book_listing_evidence_access_audit").insert({ book_copy_id: copyId, actor_user_id: user.id, purpose });
+    if (auditError) return reply(500, { error: "Evidence access audit could not be recorded; preview blocked" });
+    const { data: signed, error: signedError } = await service.storage.from("listing-evidence-private").createSignedUrl(objectKey, 60);
+    if (signedError || !signed?.signedUrl) return reply(500, { error: "Unable to create secure evidence preview" });
     return reply(200, { signed_url: signed.signedUrl, expires_in_seconds: 60 });
   }
 
