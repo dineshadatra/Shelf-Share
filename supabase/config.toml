@@ -50,3 +50,9 @@ verify_jwt = true
 
 # Configure the SMS provider in Supabase Dashboard. Credentials belong in server-side
 # secrets only; never in VITE_* browser variables.
+
+[functions.marketplace-api]
+verify_jwt = false # JWT is checked in the handler; provider webhooks have no user JWT.
+
+[functions.marketplace-outbox]
+verify_jwt = false # Protected by a dedicated worker secret; never expose to browsers.
