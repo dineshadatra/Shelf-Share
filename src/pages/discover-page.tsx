@@ -80,6 +80,7 @@ export default function DiscoverPage() {
   const [savingId,setSavingId]=useState("");
   const [nearbyRequested,setNearbyRequested]=useState(false);
   const initialLoadDone=useRef(false);
+  const previousAutoSearch=useRef<{sort:string;city:string;coordinates:{latitude:number;longitude:number}|null}>({sort,city,coordinates});
 
   useEffect(()=>{
     if(!supabase)return;
@@ -132,7 +133,12 @@ export default function DiscoverPage() {
     setData(response as Result);setPage(nextPage);setLoading(false);
   },[filters,minPrice,maxPrice,fromDate,untilDate]);
   useEffect(()=>{ if(!initialLoadDone.current){initialLoadDone.current=true;void load(1);} },[load]);
-  useEffect(()=>{ if(initialLoadDone.current) void load(1); },[sort,city,coordinates]);
+  useEffect(()=>{
+    const previous=previousAutoSearch.current;
+    const changed=previous.sort!==sort || previous.city!==city || previous.coordinates!==coordinates;
+    previousAutoSearch.current={sort,city,coordinates};
+    if(initialLoadDone.current && changed) void load(1);
+  },[sort,city,coordinates,load]);
 
   const locationOptIn=()=>{
     if(!navigator.geolocation){setLocationMessage("Location is not available in this browser. You can still browse by locality.");return;}
