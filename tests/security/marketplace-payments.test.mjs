@@ -204,7 +204,8 @@ test("returns are reader-initiated and must complete via two-party handover", ()
   const fn = functionBody(outbox, "public.request_book_return(");
   assert.match(fn, /v_booking\.reader_id<>v_actor/);
   assert.match(rentals, /invoke\("request_return"/);
-  assert.match(rentals, /handover_type.*"return"/);
+  assert.match(rentals, /handover_type:type/);
+  assert.match(rentals, /booking.status==="confirmed"\?"collection":"return"/);
   assert.match(rentals, /Upload.*return condition/i);
 });
 
