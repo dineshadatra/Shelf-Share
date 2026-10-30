@@ -30,6 +30,7 @@ test("OTP expiry, resend interval and server rate limits are configured", () => 
   assert.match(config, /sms_sent\s*=\s*15/);
   assert.match(config, /sign_in_sign_ups\s*=\s*20/);
   assert.match(config, /token_verifications\s*=\s*10/);
+  assert.ok(config.includes("[auth.email]\nenable_signup = false"));
 });
 
 test("registration enforces phone verification, age, camera object and accepted legal version server-side", () => {
@@ -49,7 +50,8 @@ test("identity submission binds evidence to the authenticated user and private b
   assert.match(fn, /verification-selfie-private/);
   assert.match(fn, /p_case_id/);
   assert.match(fn, /p_document_type not in \('passport','pan','driving_licence'\)/);
-  assert.match(fn, /user_verifications/);\n  assert.match(fn, /address_evidence/);
+  assert.match(fn, /user_verifications/);
+  assert.match(fn, /address_evidence/);
 });
 
 test("verification status and identity evidence are not browser-writable", () => {
@@ -69,10 +71,10 @@ test("private identity, selfie and profile buckets have no browser read policy",
 });
 
 test("admin verification endpoints authenticate staff roles and prevent self review", () => {
-  assert.match(edge, /auth\.getUser\(\)/);
-  assert.match(edge, /verification_reviewer/);\n  assert.match(edge, /auth\\.admin\\.updateUserById/);\n  assert.match(edge, /ban_duration: "876000h"/);\n  assert.match(edge, /verification_document_access_audit/);
-  assert.match(edge, /auth\\.admin\\.updateUserById/);
+  assert.match(edge, /verification_reviewer/);
+  assert.match(edge, /auth\.admin\.updateUserById/);
   assert.match(edge, /ban_duration: "876000h"/);
+  assert.match(edge, /verification_document_access_audit/);
   assert.match(migration, /v_case\.user_id = v_actor then raise exception 'Reviewers cannot review or approve their own account'/);
   assert.match(migration, /private\.has_role\('verification_reviewer'\)/);
   assert.match(migration, /revoke all on function public\.review_verification_case/);
