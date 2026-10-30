@@ -6,6 +6,7 @@ import { Alert } from "@/components/ui/alert";
 export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const capturedUrlRef = useRef<string | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState(false);
   const [captured, setCaptured] = useState<string | null>(null);
@@ -18,8 +19,8 @@ export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null
 
   useEffect(() => () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
-    if (captured) URL.revokeObjectURL(captured);
-  }, [captured]);
+    if (capturedUrlRef.current) URL.revokeObjectURL(capturedUrlRef.current);
+  }, []);
 
   const startCamera = async () => {
     setError("");
@@ -72,8 +73,10 @@ export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null
         return;
       }
       const file = new File([blob], "profile-capture.jpg", { type: "image/jpeg" });
-      if (captured) URL.revokeObjectURL(captured);
-      setCaptured(URL.createObjectURL(blob));
+      if (capturedUrlRef.current) URL.revokeObjectURL(capturedUrlRef.current);
+      const previewUrl = URL.createObjectURL(blob);
+      capturedUrlRef.current = previewUrl;
+      setCaptured(previewUrl);
       onCapture(file);
       stopCamera();
     }, "image/jpeg", 0.88);
@@ -89,7 +92,7 @@ export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null
     <div className="camera-actions">
       {!captured && !active && <Button type="button" onClick={startCamera}><Camera size={16}/> Allow camera & start</Button>}
       {active && <Button type="button" onClick={capture}><CheckCircle2 size={16}/> Capture live photo</Button>}
-      {captured && <Button type="button" variant="outline" onClick={() => { setCaptured(null); onCapture(null); void startCamera(); }}><RefreshCw size={16}/> Retake photo</Button>}
+      {captured && <Button type="button" variant="outline" onClick={() => { if (capturedUrlRef.current) URL.revokeObjectURL(capturedUrlRef.current); capturedUrlRef.current = null; setCaptured(null); onCapture(null); void startCamera(); }}><RefreshCw size={16}/> Retake photo</Button>}
       {active && <Button type="button" variant="ghost" onClick={stopCamera}><CameraOff size={16}/> Stop camera</Button>}
     </div>
     <p className="ss-field-hint">A live camera capture is required. Gallery uploads are not accepted. Camera capture is not a biometric liveness check.</p>
