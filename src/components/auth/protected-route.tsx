@@ -42,7 +42,7 @@ export function ProtectedRoute({ children, staffOnly = false, moderationOnly = f
     setCheckingStaff(true);
     const endpoint = moderationOnly ? "catalogue-api" : "verification-admin";
     const action = moderationOnly ? "moderator_me" : "me";
-    supabase.functions.invoke(endpoint, { body: { action } })
+    Promise.resolve(supabase.functions.invoke(endpoint, { body: { action } }))
       .then(({ data, error }) => {
         if (!active) return;
         setStaffAllowed(!error && data?.authorized === true);
