@@ -130,7 +130,7 @@ export default function RegisterPage() {
           </> : <Alert tone="warning">Registration is disabled until ShelfShare publishes and activates approved Terms and Privacy documents.</Alert>}
         </div>
         <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
-        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted || (captchaRequired && !captchaToken)}><Smartphone size={17}/>{busy ? "Sending OTP…" : user ? "Continue to live photo" : "Create account with OTP"}</Button>
+        <Button type="submit" size="lg" block disabled={busy || policyLoading || !policy || !accepted || (!user && captchaRequired && !captchaToken)}><Smartphone size={17}/>{busy ? "Sending OTP…" : user ? "Continue to live photo" : "Create account with OTP"}</Button>
       </>}
       {step === "otp" && <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
