@@ -246,7 +246,7 @@ select d.id as deposit_id, d.booking_id, d.payer_id, d.currency, d.status,
        and not exists (
          select 1 from public.bookings active
          where (active.reader_id=d.payer_id or active.owner_id=d.payer_id)
-           and active.status in ('owner_accepted','payment_pending','confirmed','collection_pending','active','return_pending','disputed')
+           and (active.status::text in ('owner_accepted','payment_pending','confirmed','collection_pending','active','return_pending','disputed'))
        )
        then greatest(d.amount_paise - coalesce((
          select sum(case when dl.event_type in ('released','amount_applied') then dl.amount_paise else 0 end)
@@ -310,6 +310,7 @@ declare
   v_before interval := interval '0';
   v_after interval := interval '0';
   v_existing uuid;
+  v_cfg public.booking_workflow_configuration%rowtype;
 begin
   if v_reader is null then raise exception 'Authentication required'; end if;
   if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then
@@ -319,6 +320,12 @@ begin
     where reader_id=v_reader and request_idempotency_key=p_idempotency_key;
   if v_existing is not null then return v_existing; end if;
   if p_start_at<=now() or p_end_at<=p_start_at then raise exception 'Choose a future, valid rental interval'; end if;
+  select * into v_cfg from public.booking_workflow_configuration where id=true and is_active;
+  if not found or v_cfg.rental_duration_mode is null then
+    raise exception 'Approved booking duration and buffer policy is not configured';
+  end if;
+  v_before:=v_cfg.buffer_before;
+  v_after:=v_cfg.buffer_after;
   if p_duration_days not in (3,7,15,30) and not (p_duration_days between 1 and 90) then
     raise exception 'Rental duration is outside the supported range';
   end if;
@@ -461,7 +468,9 @@ begin
   end if;
   select * into v_provider from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent and (expires_at is null or expires_at>now());
-  if not found then raise exception 'No provider is approved for the ShelfShare marketplace rental model'; end if;
+  if not found or v_provider.marketplace_model<>'peer_to_peer_physical_book_rental' then
+    raise exception 'No provider is approved for the ShelfShare peer-to-peer book rental model';
+  end if;
   if exists(select 1 from public.payments where idempotency_key=p_idempotency_key) then
     select id into v_payment from public.payments where idempotency_key=p_idempotency_key;
     return v_payment;
@@ -469,6 +478,10 @@ begin
   select * into v_item from public.rental_items where booking_id=p_booking_id limit 1;
   select * into v_copy from public.book_copies where id=v_item.book_copy_id for update;
   perform private.assert_booking_request_identity(v_booking.reader_id,v_copy,v_booking.requested_handover_location_id);
+  if not exists(select 1 from public.provider_vendor_accounts x
+    where x.provider_approval_id=v_provider.id and x.user_id=v_copy.owner_id and x.kyc_status='verified') then
+    raise exception 'Owner has not completed provider vendor onboarding and KYC';
+  end if;
   update public.copy_reservations set status='expired'
    where book_copy_id=v_copy.id and status='hold' and expires_at<=now();
   if exists(select 1 from public.book_availability_blocks x where x.book_copy_id=v_copy.id and x.blocked_period&&v_item.reserved_period)
@@ -849,7 +862,12 @@ begin
   if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Trusted backend required'; end if;
   select * into v_session from public.handover_sessions where id=p_session_id for update;
   if not found or v_session.status not in ('created','awaiting_counterparty') or v_session.completed_at is not null then raise exception 'Handover session is not active'; end if;
-  if v_session.expires_at<=now() then update public.handover_sessions set status='expired' where id=p_session_id; raise exception 'Handover QR/OTP expired'; end if;
+  if v_session.expires_at<=now() then
+    update public.handover_sessions set status='expired' where id=p_session_id;
+    insert into public.handover_events(handover_session_id,actor_id,event_type,event_payload)
+      values(p_session_id,p_actor_id,'verification_expired','{}'::jsonb);
+    return false;
+  end if;
   select * into v_booking from public.bookings where id=v_session.booking_id;
   if p_actor_id=v_session.initiator_id or p_actor_id not in (v_booking.reader_id,v_booking.owner_id) then raise exception 'The other authenticated party must scan or enter the fallback OTP'; end if;
   if v_session.otp_locked_until is not null and v_session.otp_locked_until>now() then raise exception 'OTP fallback temporarily locked'; end if;
@@ -861,7 +879,7 @@ begin
       where id=p_session_id;
     insert into public.handover_events(handover_session_id,actor_id,event_type,event_payload)
       values(p_session_id,p_actor_id,'verification_failed',jsonb_build_object('attempts',least(v_session.otp_attempts+1,5)));
-    raise exception 'QR token or OTP is invalid';
+    return false;
   end if;
   if v_session.qr_consumed_at is not null then raise exception 'This one-time handover token has already been used'; end if;
   if not coalesce(p_condition_acknowledged,false) then raise exception 'Confirm the initial condition evidence before continuing'; end if;
