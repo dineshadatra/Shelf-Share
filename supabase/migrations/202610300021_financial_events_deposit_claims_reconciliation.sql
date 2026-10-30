@@ -116,8 +116,10 @@ begin
   end if;
   select * into v_cfg from public.booking_workflow_configuration where id=true and is_active;
   if not found or v_cfg.payment_hold_seconds is null or v_cfg.rental_duration_mode is null
-    or v_cfg.tax_policy_version is null or v_cfg.cancellation_policy_version is null then
-    raise exception 'Booking, tax and cancellation policies must be approved before checkout is enabled';
+    or v_cfg.tax_policy_version is null or v_cfg.cancellation_policy_version is null
+    or v_cfg.tax_approval_reference is null or v_booking.tax_calculated_at is null
+    or v_booking.payment_policy_version is distinct from v_cfg.tax_policy_version then
+    raise exception 'Approved booking, tax and cancellation policy plus per-booking tax calculation are required before checkout';
   end if;
   select * into v_provider from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent
@@ -168,6 +170,86 @@ end;
 $$;
 revoke all on function public.begin_booking_payment(uuid,text,text,text) from public,anon,authenticated;
 grant execute on function public.begin_booking_payment(uuid,text,text,text) to service_role;
+
+-- Tax must be calculated under a CA-approved policy before checkout. This
+-- function accepts only a result from a trusted server-side tax integration.
+create or replace function public.record_booking_tax_calculation(
+  p_booking_id uuid,p_tax_paise bigint,p_policy_version text
+) returns void language plpgsql security definer
+set search_path = pg_catalog, public
+as $
+declare v_booking public.bookings%rowtype; v_cfg public.booking_workflow_configuration%rowtype;
+begin
+  if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Trusted tax service required'; end if;
+  if p_tax_paise is null or p_tax_paise<0 or length(btrim(coalesce(p_policy_version,'')))<3 then
+    raise exception 'Tax result and approved policy version are required';
+  end if;
+  select * into v_cfg from public.booking_workflow_configuration where id=true and is_active;
+  if not found or v_cfg.tax_policy_version is distinct from p_policy_version
+    or v_cfg.tax_approval_reference is null or v_cfg.tax_approved_by is null or v_cfg.tax_approved_at is null then
+    raise exception 'No matching CA-approved tax policy is active';
+  end if;
+  select * into v_booking from public.bookings where id=p_booking_id for update;
+  if not found or v_booking.status<>'owner_accepted' or v_booking.tax_calculated_at is not null then
+    raise exception 'Tax can only be calculated once before checkout';
+  end if;
+  if exists(select 1 from public.payments where booking_id=p_booking_id) then
+    raise exception 'Tax cannot be changed after a payment attempt exists';
+  end if;
+  update public.bookings set tax_paise=p_tax_paise,payment_policy_version=p_policy_version,tax_calculated_at=now()
+    where id=p_booking_id;
+  insert into public.booking_audit_events(booking_id,event_type,metadata,idempotency_key)
+    values(p_booking_id,'tax_calculated',
+      jsonb_build_object('tax_paise',p_tax_paise,'policy_version',p_policy_version),
+      'booking-tax:'||p_booking_id::text);
+end;
+$;
+revoke all on function public.record_booking_tax_calculation(uuid,bigint,text) from public,anon,authenticated;
+grant execute on function public.record_booking_tax_calculation(uuid,bigint,text) to service_role;
+
+-- Final owner payable is calculated only after a finance reviewer has checked
+-- tax withholding and provider fees. This is not a provider settlement or a
+-- representation that the marketplace has received money.
+create or replace function public.record_owner_settlement_calculation(
+  p_actor_id uuid,p_earning_id uuid,p_tax_withheld_paise bigint,p_provider_fee_paise bigint,
+  p_adjustment_paise bigint,p_policy_version text
+) returns bigint language plpgsql security definer
+set search_path = pg_catalog, public
+as $
+declare v_earning public.owner_earnings%rowtype; v_net bigint;
+begin
+  if not exists(select 1 from public.user_roles r where r.user_id=p_actor_id and r.revoked_at is null
+    and r.role in ('finance_operator','admin','super_admin')) then raise exception 'Finance settlement approval required'; end if;
+  if p_tax_withheld_paise is null or p_tax_withheld_paise<0
+    or p_provider_fee_paise is null or p_provider_fee_paise<0
+    or p_adjustment_paise is null
+    or length(btrim(coalesce(p_policy_version,'')))<5 then
+    raise exception 'Tax, provider fee, adjustment and approved settlement policy are required';
+  end if;
+  select * into v_earning from public.owner_earnings where id=p_earning_id for update;
+  if not found or v_earning.status<>'eligible' then raise exception 'Owner earning is not awaiting settlement calculation'; end if;
+  if not exists(select 1 from public.payment_provider_approvals a
+    join public.bookings b on b.id=v_earning.booking_id
+    join public.payments p on p.booking_id=b.id and p.provider=a.provider_code
+    where a.enabled_for_rent and a.marketplace_model='peer_to_peer_physical_book_rental'
+      and a.accounting_approval_reference is not null and a.legal_approval_reference is not null
+      and (a.expires_at is null or a.expires_at>now())) then
+    raise exception 'Approved provider and accounting controls are required for settlement calculation';
+  end if;
+  if p_tax_withheld_paise+p_provider_fee_paise>v_earning.gross_rent_paise-v_earning.commission_paise then
+    raise exception 'Tax and provider fees exceed the amount payable after commission';
+  end if;
+  v_net:=v_earning.gross_rent_paise-v_earning.commission_paise-p_tax_withheld_paise-p_provider_fee_paise+p_adjustment_paise;
+  if v_net<0 then raise exception 'Final owner payable cannot be negative'; end if;
+  update public.owner_earnings set tax_withheld_paise=p_tax_withheld_paise,provider_fee_paise=p_provider_fee_paise,
+    adjustment_paise=p_adjustment_paise,net_payable_paise=v_net,settlement_calculated_at=now(),
+    settlement_policy_version=p_policy_version,settlement_approved_by=p_actor_id
+    where id=p_earning_id;
+  return v_net;
+end;
+$;
+revoke all on function public.record_owner_settlement_calculation(uuid,uuid,bigint,bigint,bigint,text) from public,anon,authenticated;
+grant execute on function public.record_owner_settlement_calculation(uuid,uuid,bigint,bigint,bigint,text) to service_role;
 
 -- Provider event updates are the only route to a terminal refund/payout/deposit status.
 create or replace function public.apply_verified_refund_event(
