@@ -13,6 +13,7 @@ const reservationReleaseSql = await read("../../supabase/migrations/202610300015
 const moderationFixSql = await read("../../supabase/migrations/202610300016_catalogue_moderation_photo_and_bundle_fixes.sql");
 const currentAvailabilitySql = await read("../../supabase/migrations/202610300017_waitlist_current_availability_check.sql");
 const ownerDeclarationSql = await read("../../supabase/migrations/202610300018_backend_owner_declaration_acceptance.sql");
+const bundleApprovalSql = await read("../../supabase/migrations/202610300019_bundle_approval_validation.sql");
 const bundleOwnerUi = await read("../../src/pages/owner-dashboard-page.tsx");
 const bundleAdminUi = await read("../../src/pages/admin-bundle-queue-page.tsx");
 const api = await read("../../supabase/functions/catalogue-api/index.ts");
@@ -201,4 +202,20 @@ test("backend refuses listing saves without explicit owner declaration acceptanc
   assert.match(ownerDeclarationSql, /save_book_listing_unchecked_legacy/);
   assert.match(ownerDeclarationSql, /revoke all on function public\.save_book_listing_unchecked_legacy/);
   assert.match(listingUi, /p_declaration_accepted:accepted/);
+});
+
+test("bundle approval revalidates every included copy and verified owner", () => {
+  assert.match(bundleApprovalSql, /v_valid<>v_total/);
+  assert.match(bundleApprovalSql, /bc\.listing_status='approved'/);
+  assert.match(bundleApprovalSql, /bc\.is_available_for_rent/);
+  assert.match(bundleApprovalSql, /v\.status='verified'/);
+  assert.match(bundleApprovalSql, /v_age_eligible/);
+});
+
+test("owners see public decision reasons but never internal reviewer notes", () => {
+  assert.match(api, /moderation_history: historyResult\.data/);
+  assert.match(api, /moderation_history: history \?\? \[\]/);
+  assert.match(api, /select\("action,from_status,to_status,reason,created_at"\)/);
+  assert.match(ownerUi, /Latest review/);
+  assert.doesNotMatch(api, /moderation_history.*internal_notes/);
 });
