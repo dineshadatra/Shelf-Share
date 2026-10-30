@@ -48,6 +48,7 @@ function weekendRange() {
 }
 
 export default function DiscoverPage() {
+  const navigate = useNavigate();
   const { user }=useAuth();
   const [params]=useSearchParams();
   const [query,setQuery]=useState(params.get("query")??"");
