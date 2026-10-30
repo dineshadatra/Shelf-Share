@@ -189,12 +189,28 @@ $$;
 revoke all on function public.get_my_book_bundles() from public,anon;
 grant execute on function public.get_my_book_bundles() to authenticated;
 
+create or replace function private.log_book_bundle_submission()
+returns trigger language plpgsql security definer
+set search_path=pg_catalog,public
+as $
+begin
+  if new.status='pending_review' then
+    insert into public.book_bundle_moderation_events(bundle_id,actor_user_id,action,from_status,to_status,reason)
+    values(new.id,new.owner_id,'submitted',null,new.status,'Owner submitted bundle for manual moderation');
+  end if;
+  return new;
+end;
+$;
+create trigger book_bundle_submission_event
+after insert on public.book_bundles
+for each row execute function private.log_book_bundle_submission();
+
 create or replace function public.review_book_bundle(p_bundle_id uuid,p_action text,p_reason text)
 returns void
 language plpgsql security definer
 set search_path = pg_catalog, public, private
 as $$
-declare v_bundle public.book_bundles%rowtype; v_to text;
+declare v_bundle public.book_bundles%rowtype; v_to text; v_event_action text;
 begin
   if auth.uid() is null or not (private.has_role('moderator') or private.has_role('admin') or private.has_role('super_admin')) then
     raise exception 'Moderator permission required';
@@ -210,13 +226,13 @@ begin
           and bc.listing_status='approved' and bc.is_available_for_rent) not between 2 and 5 then
       raise exception 'Bundle must contain two to five approved, available copies in one city';
     end if;
-    update public.book_bundles set status='approved',updated_at=now() where id=p_bundle_id; v_to:='approved';
-  elsif p_action='reject' then update public.book_bundles set status='rejected',updated_at=now() where id=p_bundle_id; v_to:='rejected';
-  elsif p_action='suspend' then update public.book_bundles set status='paused',updated_at=now() where id=p_bundle_id; v_to:='paused';
-  else update public.book_bundles set status='removed',updated_at=now() where id=p_bundle_id; v_to:='removed';
+    update public.book_bundles set status='approved',updated_at=now() where id=p_bundle_id; v_to:='approved'; v_event_action:='approved';
+  elsif p_action='reject' then update public.book_bundles set status='rejected',updated_at=now() where id=p_bundle_id; v_to:='rejected'; v_event_action:='rejected';
+  elsif p_action='suspend' then update public.book_bundles set status='paused',updated_at=now() where id=p_bundle_id; v_to:='paused'; v_event_action:='suspended';
+  else update public.book_bundles set status='removed',updated_at=now() where id=p_bundle_id; v_to:='removed'; v_event_action:='removed';
   end if;
   insert into public.book_bundle_moderation_events(bundle_id,actor_user_id,action,from_status,to_status,reason)
-    values(p_bundle_id,auth.uid(),p_action,v_bundle.status,v_to,left(p_reason,1000));
+    values(p_bundle_id,auth.uid(),v_event_action,v_bundle.status,v_to,left(p_reason,1000));
 end;
 $$;
 revoke all on function public.review_book_bundle(uuid,text,text) from public,anon,authenticated;
