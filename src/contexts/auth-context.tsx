@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session, User } from "@supabase/supabase-js";
 import { isSupabaseConfigured, supabase } from "@/lib/supabase";
 
@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [verification, setVerification] = useState<VerificationSummary | null>(null);
 
-  const refreshVerification = async () => {
+  const refreshVerification = useCallback(async () => {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
@@ -86,7 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSession(null);
       setVerification(null);
     }
-  }), [loading, session, verification]);
+  }), [loading, session, verification, refreshVerification]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
