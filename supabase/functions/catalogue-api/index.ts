@@ -183,6 +183,7 @@ Deno.serve(async (req) => {
   const roleNames = (roles ?? []).map((row) => row.role as string);
   const isModerator = roleNames.some((role) => ["moderator", "admin", "super_admin"].includes(role));
   const isAdmin = roleNames.some((role) => ["admin", "super_admin"].includes(role));
+  if (action === "moderator_me") return isModerator ? reply(200, { authorized: true }) : reply(403, { error: "Marketplace moderator permission required" });
 
   if (action === "admin_queue" || action === "preview_image" || action === "moderate_listing" || action === "moderate_bundle") {
     if (!isModerator) return reply(403, { error: "Marketplace moderator permission required" });
