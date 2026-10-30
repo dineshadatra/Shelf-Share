@@ -468,8 +468,13 @@ begin
     and r.role in ('finance_operator','admin','super_admin')) then raise exception 'Finance approval required'; end if;
   if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128
     or length(btrim(coalesce(p_reason_code,'')))<4 then raise exception 'Refund idempotency key and reason are required'; end if;
-  select id into v_refund from public.refunds where idempotency_key=p_idempotency_key;
+  select id into v_refund from public.refunds
+    where idempotency_key=p_idempotency_key and payment_id=p_payment_id
+      and requested_by=p_actor_id and amount_paise=p_amount_paise and reason_code=p_reason_code;
   if v_refund is not null then return v_refund; end if;
+  if exists(select 1 from public.refunds where idempotency_key=p_idempotency_key) then
+    raise exception 'Refund idempotency key was already used for a different request';
+  end if;
   select * into v_payment from public.payments where id=p_payment_id for update;
   if not found or (v_payment.status not in ('captured','partially_refunded','reconciliation_required') or v_payment.captured_at is null) then
     raise exception 'Only provider-captured payments can be refunded'; end if;
