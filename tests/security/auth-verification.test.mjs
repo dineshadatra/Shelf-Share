@@ -71,6 +71,8 @@ test("private identity, selfie and profile buckets have no browser read policy",
 test("admin verification endpoints authenticate staff roles and prevent self review", () => {
   assert.match(edge, /auth\.getUser\(\)/);
   assert.match(edge, /verification_reviewer/);
+  assert.match(edge, /auth\\.admin\\.updateUserById/);
+  assert.match(edge, /ban_duration: "876000h"/);
   assert.match(migration, /v_case\.user_id = v_actor then raise exception 'Reviewers cannot review or approve their own account'/);
   assert.match(migration, /private\.has_role\('verification_reviewer'\)/);
   assert.match(migration, /revoke all on function public\.review_verification_case/);
