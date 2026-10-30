@@ -156,8 +156,33 @@ Deno.serve(async (req) => {
       p_internal_notes: typeof payload.internal_notes === "string" ? payload.internal_notes : null,
       p_assignee: typeof payload.assignee_id === "string" ? payload.assignee_id : null
     };
+    let suspendedUserId: string | null = null;
+    if (action === "decision" && payload.decision === "suspend") {
+      const { data: targetCase } = await service.from("verification_cases")
+        .select("user_id")
+        .eq("id", caseId)
+        .maybeSingle();
+      if (!targetCase) return reply(404, { error: "Verification case not found" });
+      suspendedUserId = targetCase.user_id;
+    }
     const { error } = await userClient.rpc("review_verification_case", rpcArgs);
     if (error) return reply(400, { error: error.message });
+    if (suspendedUserId) {
+      const { error: banError } = await service.auth.admin.updateUserById(
+        suspendedUserId,
+        { ban_duration: "876000h" }
+      );
+      if (banError) {
+        await service.from("verification_audit").insert({
+          user_id: suspendedUserId,
+          actor_user_id: user.id,
+          action: "auth_session_ban_failed",
+          reason_code: "account_suspended",
+          metadata: { case_id: caseId }
+        });
+        return reply(502, { error: "The account is suspended in ShelfShare, but the Auth ban could not be applied. Escalate this case before closing the review." });
+      }
+    }
     return reply(200, { success: true });
   }
 
