@@ -18,8 +18,15 @@ type Detail = {
   owner:{display_name:string;verified:boolean};
   images:Array<{url:string;alt_text:string|null;is_cover:boolean}>;
 };
+type HandoverLocation = { id:string; name:string; public_address:string };
 const INR=new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2});
 const indiaDate=(value:string,end=false)=>value?value+(end?"T23:59:59+05:30":"T00:00:00+05:30"):"";
+const addDays=(date:string,days:number)=>{
+  const [y,m,d]=date.split("-").map(Number);
+  const next=new Date(Date.UTC(y,m-1,d+days));
+  return next.toISOString().slice(0,10);
+};
+const calendarStart=(date:string)=>date+"T00:00:00+05:30";
 
 export default function BookDetailsPage(){
   const {id}=useParams();
@@ -34,12 +41,35 @@ export default function BookDetailsPage(){
   const [busy,setBusy]=useState(false);
   const [notice,setNotice]=useState("");
   const [wishlisted,setWishlisted]=useState(false);
+  const [locations,setLocations]=useState<HandoverLocation[]>([]);
+  const [locationId,setLocationId]=useState("");
+
   useEffect(()=>{
+    let active=true;
     if(!supabase||!id){setLoading(false);return;}
     supabase.functions.invoke("catalogue-api",{body:{action:"listing_detail",copy_id:id}})
-      .then(({data,error:invokeError})=>{if(invokeError)setError(invokeError.message);else setDetail(data as Detail);})
-      .finally(()=>setLoading(false));
+      .then(async({data,error:invokeError})=>{
+        if(!active)return;
+        if(invokeError){setError(invokeError.message);return;}
+        setDetail(data as Detail);
+        const city=(data as Detail)?.copy?.city_id;
+        if(city){
+          const {data:points,error:pointError}=await supabase.from("handover_locations")
+            .select("id,name,public_address").eq("city_id",city).eq("status","active").order("name");
+          if(active){
+            if(pointError)setError("Unable to load approved public handover points.");
+            else {
+              const next=(points??[]) as HandoverLocation[];
+              setLocations(next);
+              if(next.length)setLocationId(next[0].id);
+            }
+          }
+        }
+      })
+      .finally(()=>{if(active)setLoading(false);});
+    return ()=>{active=false;};
   },[id]);
+
   const price=useMemo(()=>{
     const p=detail?.pricing;
     if(!p)return null;
@@ -50,6 +80,7 @@ export default function BookDetailsPage(){
     if(p.custom_daily_paise!=null)return p.custom_daily_paise*duration;
     return null;
   },[detail,duration]);
+
   const checkAvailability=async()=>{
     if(!supabase||!detail)return;
     if(!from||!until||until<from){setError("Choose a valid start and end date.");return;}
@@ -61,6 +92,35 @@ export default function BookDetailsPage(){
     else setAvailability(data?.available?"available":"unavailable");
     setBusy(false);
   };
+
+  const requestBooking=async()=>{
+    if(!supabase||!detail)return;
+    if(!user){setNotice("Sign in and complete identity verification before requesting a rental.");return;}
+    if(!from||!until||until<from){setError("Choose valid rental dates.");return;}
+    if(!locationId){setError("Choose an approved public handover point.");return;}
+    const days=Math.round((Date.parse(until+"T00:00:00Z")-Date.parse(from+"T00:00:00Z"))/86400000)+1;
+    if(days!==duration){setError("The selected dates must match the chosen rental duration.");return;}
+    setBusy(true);setError("");setNotice("");
+    const {data:policy,error:policyError}=await supabase.functions.invoke("marketplace-api",{body:{action:"booking_configuration"}});
+    if(policyError||!policy?.rental_duration_mode){
+      setError(policyError?.message??"Booking is not enabled yet. Approved timing policies are still required.");
+      setBusy(false);return;
+    }
+    const startAt=calendarStart(from);
+    const endAt=calendarStart(addDays(until,1));
+    const {data,error:bookingError}=await supabase.functions.invoke("marketplace-api",{body:{
+      action:"request_booking",copy_id:detail.copy.id,handover_location_id:locationId,
+      start_at:startAt,end_at:endAt,duration_days:duration,
+      idempotency_key:"ss-booking-"+crypto.randomUUID(),
+    }});
+    if(bookingError)setError(bookingError.message);
+    else {
+      setNotice("Your request has been sent to the owner. No payment has been started. You can follow the owner’s decision in Rental history.");
+      setAvailability("unknown");
+    }
+    setBusy(false);
+  };
+
   const joinWaitlist=async()=>{
     if(!supabase||!detail)return;
     if(!user){setNotice("Sign in and complete verification before joining a waitlist.");return;}
@@ -112,18 +172,24 @@ export default function BookDetailsPage(){
         <div className="detail-price-panel">
           <label className="ss-field"><span className="ss-label">Rental duration</span><select className="ss-input" value={duration} onChange={e=>setDuration(Number(e.target.value))}><option value={3}>3 days</option><option value={7}>7 days</option><option value={15}>15 days</option><option value={30}>30 days</option></select></label>
           <strong>{price!=null?INR.format(price/100):"Price not configured"}</strong>
-          <span>Selected rental duration · deposit not enabled</span>
+          <span>Rental fee · 10% platform commission is included in the checkout breakdown</span>
         </div>
         <section className="detail-availability">
-          <h3><CalendarDays size={17}/> Check dates</h3>
-          <div className="form-two-col"><Input label="From" type="date" name="availability-from" value={from} onChange={e=>{setFrom(e.target.value);setAvailability("unknown");}}/><Input label="Until" type="date" name="availability-until" value={until} onChange={e=>{setUntil(e.target.value);setAvailability("unknown");}}/></div>
+          <h3><CalendarDays size={17}/> Request this copy</h3>
+          <div className="form-two-col"><Input label="From" type="date" name="availability-from" min={new Date().toISOString().slice(0,10)} value={from} onChange={e=>{setFrom(e.target.value);setUntil(e.target.value?addDays(e.target.value,duration-1):"");setAvailability("unknown");}}/><Input label="Until (inclusive)" type="date" name="availability-until" min={from||new Date().toISOString().slice(0,10)} value={until} onChange={e=>{setUntil(e.target.value);setAvailability("unknown");}}/></div>
+          <label className="ss-field"><span className="ss-label">Approved public handover point</span><select className="ss-input" value={locationId} onChange={e=>setLocationId(e.target.value)}><option value="">Choose a public meeting point</option>{locations.map(point=><option key={point.id} value={point.id}>{point.name} — {point.public_address}</option>)}</select></label>
+          {locations.length===0&&<Alert tone="warning">No approved public handover point is available for this listing’s city yet.</Alert>}
           <Button variant="outline" block disabled={busy||!from||!until} onClick={()=>void checkAvailability()}>{busy?"Checking…":"Check availability"}</Button>
-          {availability==="available"&&<Alert tone="success"><CheckCircle2 size={15}/> No conflicting reservation or owner block was found for those dates. A booking has not been created.</Alert>}
+          {availability==="available"&&<Alert tone="success"><CheckCircle2 size={15}/> No conflicting reservation or owner block was found. This check does not reserve the copy.</Alert>}
           {availability==="unavailable"&&<Alert tone="warning">This copy is unavailable for the selected dates. Join the waitlist to be notified when another copy is available.</Alert>}
         </section>
-        <div className="detail-actions"><Button block onClick={()=>void joinWaitlist()} disabled={busy}>Join waitlist</Button><Button variant="outline" onClick={()=>void addWishlist()} disabled={busy}><Heart size={16} fill={wishlisted?"currentColor":"none"}/>{wishlisted?"Saved":"Wishlist"}</Button></div>
-        <p className="detail-safety"><ShieldCheck size={16}/> Coordinate handover only at approved public meeting points.</p>
-        <Alert tone="info">Date checks are advisory and do not reserve a copy. Booking confirmation and payments are separate trusted workflows.</Alert>
+        <div className="detail-actions">
+          <Button block disabled={busy||!price||locations.length===0||!from||!until||!locationId} onClick={()=>void requestBooking()}>{busy?"Submitting…":"Request to rent"}</Button>
+          <Button variant="outline" onClick={()=>void addWishlist()} disabled={busy}><Heart size={16} fill={wishlisted?"currentColor":"none"}/>{wishlisted?"Saved":"Wishlist"}</Button>
+          <Button variant="outline" onClick={()=>void joinWaitlist()} disabled={busy}>Join waitlist</Button>
+        </div>
+        <p className="detail-safety"><ShieldCheck size={16}/> Handover is limited to approved public meeting points. Residential addresses are never shown.</p>
+        <Alert tone="info">The owner must accept your request first. Payment is only offered after both parties accept the current rental agreement and the server validates pricing, tax, policy and availability.</Alert>
       </div>
     </div>
   </main></PublicLayout>;
