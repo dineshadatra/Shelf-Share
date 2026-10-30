@@ -63,8 +63,9 @@ Use an 8px base rhythm with 4px exceptions: 4, 8, 12, 16, 24, 32, 40, 48, 64 and
 | Tabs | `src/components/ui/tabs.tsx` | Radix tablist, keyboard navigation and panels |
 | Toast | `src/components/ui/toast.tsx` | Sonner toast exports; message must reflect actual outcome |
 | Skeleton | `src/components/ui/skeleton.tsx` | Loading placeholder; never substitute for an error |
+| ErrorState | `src/components/ui/error-state.tsx` | Reusable failure message with optional retry callback |
 | EmptyState | `src/components/ui/empty-state.tsx` | Icon, title, description and optional action |
-| Alert | `src/components/ui/alert.tsx` | Informational, warning and success communication |
+| Alert | `src/components/ui/alert.tsx` | Informational, warning, success and error communication |
 | BookCover / BookCard | `src/components/books/` | Consistent book-jacket presentation and metadata |
 | BrandMark | `src/components/brand/brand-mark.tsx` | Text-plus-book brand lockup |
 | SiteHeader | `src/components/navigation/site-header.tsx` | Public desktop/mobile navigation |
