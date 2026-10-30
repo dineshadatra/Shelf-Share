@@ -50,15 +50,16 @@ export default function LoginPage() {
   const verifyOtp = async () => {
     setError("");
     if (!supabase) return;
+    if (captchaRequired && !captchaToken) { setError("Complete the security check before verifying the OTP."); return; }
     if (!/^\\d{6}$/.test(code)) { setError("Enter the six-digit code sent to your mobile."); return; }
     setBusy(true);
     try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalisedPhone, token: code, type: "sms" });
+      const { data, error: verifyError } = await supabase.auth.verifyOtp({ phone: normalisedPhone, token: code, type: "sms", options: captchaToken ? { captchaToken } : undefined });
       if (verifyError) throw verifyError;
       if (!data.user) throw new Error("The mobile number could not be verified.");
       navigate(nextPath, { replace: true });
     } catch (reason) { setError(userFacingAuthError(reason)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setCaptchaToken(null); setCaptchaReset((value) => value + 1); }
   };
 
   return <AuthLayout title="Welcome back." description="Sign in securely with your Indian mobile number.">
@@ -71,7 +72,7 @@ export default function LoginPage() {
       </> : <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
         <Input label="6-digit OTP" name="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\\D/g, "").slice(0, 6))}/>
-        <Button type="submit" block size="lg" disabled={busy || code.length !== 6}><LockKeyhole size={17}/>{busy ? "Verifying…" : "Verify & sign in"}</Button>
+        <Button type="submit" block size="lg" disabled={busy || code.length !== 6 || (captchaRequired && !captchaToken)}><LockKeyhole size={17}/>{busy ? "Verifying…" : "Verify & sign in"}</Button>
         <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
         <Button type="button" variant="ghost" block disabled={busy || seconds > 0 || (captchaRequired && !captchaToken)} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
         <Button type="button" variant="link" block onClick={() => { setStep("phone"); setCode(""); setError(""); }}><ArrowLeft size={15}/> Change mobile number</Button>
