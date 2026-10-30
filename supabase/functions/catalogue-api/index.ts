@@ -174,34 +174,6 @@ Deno.serve(async (req) => {
     return reply(200, { bundles: data ?? [] });
   }
 
-  const auth = await getAuthenticatedUser(req);
-  if (!auth.user || !auth.userClient) return reply(401, { error: auth.error ?? "Authentication required" });
-  const user = auth.user;
-  const userClient = auth.userClient;
-
-  if (action === "owner_listings") {
-    const { data, error } = await userClient.rpc("get_my_book_listings");
-    if (error) return reply(400, { error: error.message });
-    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
-    const signed = await Promise.all(rows.map(async (row) => {
-      const images = Array.isArray(row.images) ? row.images as Record<string, unknown>[] : [];
-      const signedImages = await Promise.all(images.slice(0, 5).map(async (item) => {
-        const key = typeof item.object_key === "string" ? item.object_key : "";
-        if (!key) return null;
-        const { data: signedData } = await service.storage.from("book-listing-public").createSignedUrl(key, 300);
-        return signedData?.signedUrl ? { ...item, url: signedData.signedUrl } : null;
-      }));
-      return { ...row, images: signedImages.filter(Boolean) };
-    }));
-    return reply(200, { listings: signed });
-  }
-
-  if (action === "my_waitlist") {
-    const { data, error } = await userClient.rpc("get_my_book_waitlist");
-    if (error) return reply(400, { error: error.message });
-    return reply(200, { entries: data ?? [] });
-  }
-
   if (action === "listing_detail") {
     const copyId = boundedText(payload.copy_id, 64);
     if (!copyId) return reply(400, { error: "Listing identifier is required" });
@@ -230,6 +202,34 @@ Deno.serve(async (req) => {
       owner: { display_name: profileResult.data?.display_name ?? "Verified owner", verified: true },
       images: signed.images ?? [],
     });
+  }
+
+  const auth = await getAuthenticatedUser(req);
+  if (!auth.user || !auth.userClient) return reply(401, { error: auth.error ?? "Authentication required" });
+  const user = auth.user;
+  const userClient = auth.userClient;
+
+  if (action === "owner_listings") {
+    const { data, error } = await userClient.rpc("get_my_book_listings");
+    if (error) return reply(400, { error: error.message });
+    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const signed = await Promise.all(rows.map(async (row) => {
+      const images = Array.isArray(row.images) ? row.images as Record<string, unknown>[] : [];
+      const signedImages = await Promise.all(images.slice(0, 5).map(async (item) => {
+        const key = typeof item.object_key === "string" ? item.object_key : "";
+        if (!key) return null;
+        const { data: signedData } = await service.storage.from("book-listing-public").createSignedUrl(key, 300);
+        return signedData?.signedUrl ? { ...item, url: signedData.signedUrl } : null;
+      }));
+      return { ...row, images: signedImages.filter(Boolean) };
+    }));
+    return reply(200, { listings: signed });
+  }
+
+  if (action === "my_waitlist") {
+    const { data, error } = await userClient.rpc("get_my_book_waitlist");
+    if (error) return reply(400, { error: error.message });
+    return reply(200, { entries: data ?? [] });
   }
 
   const { data: roles, error: roleError } = await service.from("user_roles")
