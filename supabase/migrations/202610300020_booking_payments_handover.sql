@@ -13,7 +13,8 @@ alter table public.bookings
   add column if not exists declined_at timestamptz,
   add column if not exists request_message text,
   add column if not exists payment_policy_version text,
-  add column if not exists commission_policy_version text;
+  add column if not exists commission_policy_version text,
+  add column if not exists tax_calculated_at timestamptz;
 create unique index if not exists bookings_request_idempotency_uq
   on public.bookings(reader_id, request_idempotency_key)
   where request_idempotency_key is not null;
@@ -71,6 +72,20 @@ create table if not exists public.booking_workflow_configuration (
   check (handover_ttl_seconds between 60 and 900),
   check (not is_active or (approved_by is not null and approved_at is not null))
 );
+alter table public.booking_workflow_configuration
+  add column if not exists tax_approval_reference text,
+  add column if not exists tax_approved_by uuid references auth.users(id) on delete restrict,
+  add column if not exists tax_approved_at timestamptz;
+alter table public.booking_workflow_configuration
+  add constraint booking_workflow_tax_approval_required
+  check (not is_active or (
+    length(btrim(coalesce(tax_approval_reference,'')))>=5
+    and tax_approved_by is not null and tax_approved_at is not null
+  ));
+alter table public.owner_earnings
+  add column if not exists settlement_calculated_at timestamptz,
+  add column if not exists settlement_policy_version text,
+  add column if not exists settlement_approved_by uuid references auth.users(id) on delete restrict;
 alter table public.booking_workflow_configuration enable row level security;
 
 -- Written provider, legal and accounting approvals are separate gates. No row is
@@ -463,8 +478,10 @@ begin
   if not found or v_booking.status<>'owner_accepted' then raise exception 'Only Owner-accepted bookings can proceed to payment'; end if;
   select * into v_cfg from public.booking_workflow_configuration where id=true and is_active;
   if not found or v_cfg.payment_hold_seconds is null or v_cfg.rental_duration_mode is null
-    or v_cfg.tax_policy_version is null or v_cfg.cancellation_policy_version is null then
-    raise exception 'Booking, tax and cancellation policies must be approved before checkout is enabled';
+    or v_cfg.tax_policy_version is null or v_cfg.cancellation_policy_version is null
+    or v_cfg.tax_approval_reference is null or v_booking.tax_calculated_at is null
+    or v_booking.payment_policy_version is distinct from v_cfg.tax_policy_version then
+    raise exception 'Approved booking, tax and cancellation policy plus per-booking tax calculation are required before checkout';
   end if;
   select * into v_provider from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent and (expires_at is null or expires_at>now());
@@ -1023,7 +1040,10 @@ begin
   select id into v_payout from public.payouts where idempotency_key=p_idempotency_key;
   if v_payout is not null then return v_payout; end if;
   select * into v_earning from public.owner_earnings where id=p_earning_id and owner_id=v_user for update;
-  if not found or v_earning.status<>'eligible' then raise exception 'No eligible owner settlement found'; end if;
+  if not found or v_earning.status<>'eligible' or v_earning.settlement_calculated_at is null
+    or v_earning.settlement_policy_version is null or v_earning.settlement_approved_by is null then
+    raise exception 'Owner earning is not eligible for payout until finance approves the final settlement calculation';
+  end if;
   select * into v_approval from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent and marketplace_model='peer_to_peer_physical_book_rental'
       and supports_vendor_onboarding and supports_split_settlement and supports_delayed_transfer
