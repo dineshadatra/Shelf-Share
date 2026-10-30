@@ -51,7 +51,7 @@ test("listing save and submission enforce active identity verification", () => {
 test("listing moderation is server-side, role-gated and disallows self-approval", () => {
   assert.match(hardeningSql, /private\.has_role\('moderator'\)/);
   assert.match(hardeningSql, /v_bundle\.owner_id=auth\.uid\(\)/);
-  assert.match(hardeningSql, /A moderator cannot approve or decide their own listing/);
+  assert.match(listingSql, /A moderator cannot approve or decide their own listing/);
   assert.match(api, /userClient\.rpc\("review_book_listing"/);
   assert.match(api, /Marketplace moderator permission required/);
 });
