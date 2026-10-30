@@ -68,6 +68,13 @@ Deno.serve(async (req) => {
       ? await service.from("profiles").select("id,display_name,date_of_birth,account_status").in("id", userIds)
       : { data: [] };
     const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    const { data: auditRows } = userIds.length
+      ? await service.from("verification_audit")
+          .select("id,user_id,actor_user_id,action,from_status,to_status,reason_code,created_at,metadata")
+          .in("user_id", userIds)
+          .order("created_at", { ascending: false })
+          .limit(500)
+      : { data: [] };
     const enriched = await Promise.all((cases ?? []).map(async (item) => {
       const { data: authUser } = await service.auth.admin.getUserById(item.user_id);
       const phone = authUser.user?.phone ?? "";
@@ -86,7 +93,10 @@ Deno.serve(async (req) => {
         account_status: profileById.get(item.user_id)?.account_status ?? "unknown",
         masked_phone: maskedPhone,
         documents: docs ?? [],
-        file_kinds: fileKinds.data ?? []
+        file_kinds: fileKinds.data ?? [],
+        audit_history: (auditRows ?? [])
+          .filter((entry) => (entry.metadata as Record<string, unknown> | null)?.case_id === item.id || entry.action === "registration_completed")
+          .filter((entry) => entry.user_id === item.user_id)
       };
     }));
     return reply(200, { cases: enriched });
