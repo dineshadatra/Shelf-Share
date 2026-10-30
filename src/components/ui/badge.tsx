@@ -1,0 +1,1 @@
+import type {HTMLAttributes} from "react"; import {cn} from "@/lib/utils"; export function Badge({className,tone="neutral",...props}:HTMLAttributes<HTMLSpanElement>&{tone?:"neutral"|"green"|"amber"|"rose"|"blue"}){return <span className={cn("ss-badge","ss-badge-"+tone,className)} {...props}/>;}
