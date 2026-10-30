@@ -41,7 +41,7 @@ export default function App() {
     <Route path="/verification" element={<ProtectedRoute><VerificationPage /></ProtectedRoute>} />
     <Route path="/admin" element={<ProtectedRoute staffOnly><AdminDashboardPage /></ProtectedRoute>} />
     <Route path="/admin/verifications" element={<ProtectedRoute staffOnly><AdminVerificationQueuePage /></ProtectedRoute>} />
-    <Route path="/admin/listings" element={<ProtectedRoute staffOnly><AdminListingQueuePage /></ProtectedRoute>} />
+    <Route path="/admin/listings" element={<ProtectedRoute moderationOnly><AdminListingQueuePage /></ProtectedRoute>} />
     <Route path="*" element={<NotFoundPage />} />
   </Routes>;
 }
