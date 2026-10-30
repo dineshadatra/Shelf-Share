@@ -1,4 +1,4 @@
-name: ShelfShare frontend build
+name: ShelfShare frontend and security checks
 
 on:
   push:
@@ -9,6 +9,9 @@ on:
       - main
     paths:
       - "src/**"
+      - "supabase/**"
+      - "tests/**"
+      - "docs/AUTHENTICATION_AND_VERIFICATION.md"
       - "docs/DESIGN_SYSTEM.md"
       - "docs/ROUTES.md"
       - "package.json"
@@ -21,8 +24,8 @@ permissions:
   contents: read
 
 jobs:
-  production-build:
-    name: TypeScript check and Vite production build
+  frontend-and-security:
+    name: TypeScript, build, lint and security regression tests
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
@@ -33,7 +36,9 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install --no-audit --no-fund
-      - name: Build
+      - name: Security regression tests
+        run: npm run test:security
+      - name: TypeScript check and production build
         run: npm run build
       - name: Lint
         run: npm run lint
