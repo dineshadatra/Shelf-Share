@@ -26,7 +26,7 @@ type Booking = {
   cancellation_reason_code:string|null; title:string|null; authors:string[]|null; copy_id:string;
   condition:string|null; locality_id:string|null; handover_location:string|null;
   handover_location_id:string|null; payment_status:string|null; payment_amount_paise:number|null;
-  owner_agreement_accepted:boolean; reader_agreement_accepted:boolean;
+  checkout_url:string|null; owner_agreement_accepted:boolean; reader_agreement_accepted:boolean;
   rental_start_at:string|null; rental_due_at:string|null; active_handover:Handover|null;
 };
 type Provider = {provider:string;adapter_registered:boolean;approved:boolean;deposits_approved:boolean};
@@ -258,7 +258,9 @@ export default function RentalHistoryPage(){
         {booking.reader_agreement_accepted&&provider&&<Button onClick={()=>void beginPayment(booking)} disabled={busyId===booking.id}>Continue to secure payment</Button>}
       </>}
       {booking.status==="owner_accepted"&&!booking.is_reader&&<Alert tone="info">You accepted this request and the rental agreement. Waiting for the reader’s agreement acceptance and provider-confirmed payment.</Alert>}
-      {booking.status==="payment_pending"&&<Alert tone="info"><Clock3 size={15}/> Payment is pending provider confirmation. Refresh this page after checkout; a successful browser return is not proof of payment.</Alert>}
+      {booking.status==="payment_pending"&&<><Alert tone="info"><Clock3 size={15}/> Payment is pending provider confirmation. Refresh this page after checkout; a successful browser return is not proof of payment.</Alert>
+        {booking.is_reader&&booking.checkout_url&&<Button onClick={()=>window.location.assign(booking.checkout_url!)} disabled={busyId===booking.id}>Continue secure provider checkout</Button>}
+      </>}
       {booking.status==="confirmed"&&<Alert tone="success">Payment was confirmed by the provider. Agree the collection time and meet only at the approved public handover point.</Alert>}
       {booking.status==="active"&&<div><Alert tone="success">Rental active since {dateTime(booking.rental_start_at)}. Due {dateTime(booking.rental_due_at)}.</Alert>
         {booking.is_reader&&<Button variant="outline" onClick={()=>void requestReturn(booking)} disabled={busyId===booking.id}>Request return</Button>}</div>}
