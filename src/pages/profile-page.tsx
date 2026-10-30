@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { UserRound, ShieldCheck, MapPin, Smartphone, CheckCircle2 } from "lucide-react";
+import { UserRound, ShieldCheck, Smartphone, CheckCircle2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MemberLayout } from "@/layouts/member-layout";
 import { PageHeading } from "./page-helpers";
