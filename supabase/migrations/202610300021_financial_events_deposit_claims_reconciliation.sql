@@ -379,7 +379,7 @@ begin
   insert into public.deposit_ledger(deposit_id,event_type,amount_paise,idempotency_key,metadata)
     values(v_deposit.id,'release_requested',v_remaining,'deposit-release:'||p_idempotency_key,jsonb_build_object('request_id',v_request));
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
-    values('deposit',v_deposit.id,'deposit_release_requested',jsonb_build_object('request_id',v_request,'amount_paise',v_remaining),
+    values('deposit',v_deposit.id,'deposit_release_requested',jsonb_build_object('request_id',v_request,'amount_paise',v_remaining,'provider',v_deposit.provider),
       'deposit-release-outbox:'||p_idempotency_key) on conflict(idempotency_key) do nothing;
   return v_request;
 end;
@@ -633,7 +633,7 @@ begin
     and p.legal_approval_reference is not null) then raise exception 'Provider/legal approval is not active'; end if;
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
     values('deposit',v_deposit.id,'deposit_claim_application_requested',
-      jsonb_build_object('deposit_id',v_deposit.id,'claim_id',p_claim_id,'amount_paise',v_claim.decision_amount_paise),
+      jsonb_build_object('deposit_id',v_deposit.id,'claim_id',p_claim_id,'amount_paise',v_claim.decision_amount_paise,'provider',v_deposit.provider),
       'deposit-claim-application:'||p_idempotency_key) returning id into v_event;
   update public.deposits set status='claim_hold_pending' where id=v_deposit.id;
   insert into public.deposit_ledger(deposit_id,event_type,amount_paise,idempotency_key,metadata)
