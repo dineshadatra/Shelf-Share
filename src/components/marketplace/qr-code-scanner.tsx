@@ -9,6 +9,8 @@ export function QRCodeScanner({ onScan, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const controlsRef = useRef<IScannerControls | null>(null);
   const [error, setError] = useState("");
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
 
   useEffect(() => {
     let disposed = false;
@@ -26,7 +28,7 @@ export function QRCodeScanner({ onScan, onClose }: Props) {
             return;
           }
           controlsRef.current?.stop();
-          onScan(result.getText());
+          onScanRef.current(result.getText());
         });
         if (disposed) controls.stop();
         else controlsRef.current = controls;
@@ -42,7 +44,7 @@ export function QRCodeScanner({ onScan, onClose }: Props) {
       controlsRef.current = null;
       reader = null;
     };
-  }, [onScan]);
+  }, []);
 
   return <div className="surface" style={{ padding: "1rem", display: "grid", gap: ".75rem" }}>
     <div><strong>Scan the other participant’s handover QR</strong><p className="muted">Allow camera access. The QR is verified by ShelfShare’s server and can only be used once.</p></div>
