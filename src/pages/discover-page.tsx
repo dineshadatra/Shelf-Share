@@ -159,7 +159,7 @@ export default function DiscoverPage() {
     );
   };
   const setWeekend=()=>{
-    const range=weekendRange();setFromDate(range.from);setUntilDate(range.until);setPage(1);
+    const range=weekendRange();setFromDate(range.from);setUntilDate(range.until);setPage(1);setFiltersOpen(true);setApplyWeekend(true);
   };
   const toggleWishlist=async(item:Listing)=>{
     if(!supabase)return;
