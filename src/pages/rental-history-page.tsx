@@ -30,6 +30,8 @@ type Booking = {
   rental_start_at:string|null; rental_due_at:string|null; active_handover:Handover|null;
 };
 type Provider = {provider:string;adapter_registered:boolean;approved:boolean;deposits_approved:boolean};
+type FinancialTransaction = {transaction_type:string;reference_id:string;status:string;amount_paise:number;currency:string;description:string;created_at:string};
+type DepositPosition = {deposit_id:string;booking_id:string;status:string;amount_paise:number;locked_paise:number;available_for_release_paise:number;currency:string;provider_reference:string|null};
 type Agreement = {title:string;version:string;content_uri:string};
 type Secret = {sessionId:string;token:string;otp:string;expiresAt:string};
 
@@ -42,6 +44,8 @@ export default function RentalHistoryPage(){
   const {user}=useAuth();
   const [bookings,setBookings]=useState<Booking[]>([]);
   const [providers,setProviders]=useState<Provider[]>([]);
+  const [transactions,setTransactions]=useState<FinancialTransaction[]>([]);
+  const [depositPositions,setDepositPositions]=useState<DepositPosition[]>([]);
   const [agreement,setAgreement]=useState<Agreement|null>(null);
   const [secrets,setSecrets]=useState<Record<string,Secret>>({});
   const [otpValues,setOtpValues]=useState<Record<string,string>>({});
@@ -57,16 +61,19 @@ export default function RentalHistoryPage(){
   const load=useCallback(async()=>{
     if(!supabase){setLoading(false);return;}
     setError("");
-    const [{data:bookingsData,error:bookingError},{data:providerData},{data:agreementData}] = await Promise.all([
+    const [{data:bookingsData,error:bookingError},{data:providerData},{data:agreementData},{data:financialData}] = await Promise.all([
       supabase.rpc("get_my_booking_workspace"),
       supabase.functions.invoke("marketplace-api",{body:{action:"payment_capabilities"}}),
       supabase.from("legal_documents").select("title,version,content_uri")
         .eq("document_type","rental_agreement").eq("is_published",true)
         .lte("effective_from",new Date().toISOString()).order("effective_from",{ascending:false}).limit(1),
+      supabase.functions.invoke("marketplace-api",{body:{action:"my_financial_history"}}),
     ]);
     if(bookingError){setError(bookingError.message);setBookings([]);}
     else setBookings((Array.isArray(bookingsData)?bookingsData:[]) as Booking[]);
     setProviders((providerData?.providers??[]) as Provider[]);
+    setTransactions((financialData?.transactions??[]) as FinancialTransaction[]);
+    setDepositPositions((financialData?.deposits??[]) as DepositPosition[]);
     setAgreement(((agreementData??[])[0]??null) as Agreement|null);
     setLoading(false);
   },[]);
@@ -130,6 +137,16 @@ export default function RentalHistoryPage(){
   const requestReturn=(booking:Booking)=>run(booking.id,async()=>{
     await invoke("request_return",{booking_id:booking.id});
     setNotice("Return request recorded. Start a return handover at the agreed public meeting point.");
+  });
+  const requestDepositRelease=(booking:Booking)=>run(booking.id,async()=>{
+    const position=depositPositions.find(x=>x.booking_id===booking.id);
+    if(!position||position.available_for_release_paise<=0||!position.provider_reference)
+      throw new Error("No provider-confirmed deposit amount is currently eligible for release.");
+    await invoke("request_deposit_release",{
+      deposit_id:position.deposit_id,
+      idempotency_key:"shelfshare-deposit-release-"+crypto.randomUUID(),
+    });
+    setNotice("Deposit release requested. The deposit remains pending until the provider confirms release.");
   });
   const refreshStatus=()=>run("refresh",async()=>{setNotice("Booking and payment status refreshed from the server.");});
   const confirmOtp=(booking:Booking,session: Handover)=>run(booking.id,async()=>{
@@ -284,6 +301,10 @@ export default function RentalHistoryPage(){
         <p className="muted">Opening a dispute does not deduct or confiscate any deposit. Any provider-side hold requires a separate signed provider confirmation.</p>
       </div>}
       {booking.status==="completed"&&<Alert tone="success">Return closed on {dateTime(booking.completed_at)}. Any deposit release remains subject to the approved provider custody, inspection/claim window and dispute checks.</Alert>}
+      {booking.is_reader&&booking.status==="completed"&&(depositPositions.find(x=>x.booking_id===booking.id)?.available_for_release_paise??0)>0&&
+        <Button variant="outline" onClick={()=>void requestDepositRelease(booking)} disabled={busyId===booking.id}>
+          Request provider deposit release
+        </Button>}
       {ACTIVE.includes(booking.status)&&renderHandover(booking)}
       {booking.status==="confirmed"&&<div style={{display:"grid",gap:".5rem"}}>
         <label className="ss-field"><span className="ss-label">Report a no-show or handover issue</span><textarea className="ss-input" rows={2} value={incidentText[booking.id]??""} onChange={e=>setIncidentText(v=>({...v,[booking.id]:e.target.value}))} placeholder="Describe what happened and where you waited."/></label>
@@ -307,5 +328,24 @@ export default function RentalHistoryPage(){
       <TabsContent value="active"><div style={{display:"grid",gap:"1rem"}}>{active.length?active.map(renderBooking):<EmptyState title="No active rentals" description="After provider-confirmed payment and collection, your active rentals appear here."/ >}</div></TabsContent>
       <TabsContent value="past"><div style={{display:"grid",gap:"1rem"}}>{past.length?past.map(renderBooking):<EmptyState title="No past rentals" description="Completed or cancelled bookings appear here."/ >}</div></TabsContent>
     </Tabs>}
+    {!loading&&<section className="surface" style={{padding:"1.1rem",display:"grid",gap:"1rem",marginTop:"1.25rem"}}>
+      <div><span className="eyebrow">FINANCIAL ACTIVITY</span><h2 style={{margin:".2rem 0"}}>Payments, refunds and settlements</h2>
+        <p className="muted">Statuses and amounts are read from ShelfShare’s server records. A pending or failed transaction is not a completed payment or payout.</p></div>
+      {transactions.length===0?<EmptyState title="No financial transactions yet" description="Provider-confirmed payments, refunds and owner settlements will appear here."/>:
+        <div style={{display:"grid",gap:".55rem"}}>{transactions.map(item=><div key={item.transaction_type+item.reference_id} style={{display:"flex",justifyContent:"space-between",gap:"1rem",flexWrap:"wrap",borderBottom:"1px solid var(--border)",paddingBottom:".6rem"}}>
+          <div><strong>{item.description}</strong><div className="muted" style={{fontSize:".85rem"}}>{item.transaction_type.replaceAll("_"," ")} · {dateTime(item.created_at)}</div></div>
+          <div style={{textAlign:"right"}}><strong>{INR.format(item.amount_paise/100)}</strong><div className="muted" style={{fontSize:".85rem"}}>{item.status.replaceAll("_"," ")}</div></div>
+        </div>)}</div>}
+      <div><h3 style={{marginBottom:".35rem"}}>Booking-scoped security deposits</h3>
+        <p className="muted">These are not a pooled wallet. Locked or releasable values are shown only when backed by a provider reference and provider-confirmed deposit events.</p></div>
+      {depositPositions.length===0?<p className="muted">No provider-backed deposits are recorded.</p>:
+        <div style={{display:"grid",gap:".7rem"}}>{depositPositions.map(item=><div key={item.deposit_id} style={{border:"1px solid var(--border)",borderRadius:".65rem",padding:".8rem"}}>
+          <div style={{display:"flex",justifyContent:"space-between",gap:"1rem",flexWrap:"wrap"}}><strong>Booking deposit · {item.status.replaceAll("_"," ")}</strong><span>{INR.format(item.amount_paise/100)}</span></div>
+          <div className="booking-progress-grid" style={{marginTop:".5rem"}}>
+            <span>Provider-locked <b>{INR.format(item.locked_paise/100)}</b></span>
+            <span>Eligible for release <b>{INR.format(item.available_for_release_paise/100)}</b></span>
+          </div>
+        </div>)}</div>}
+    </section>}
   </MemberLayout>;
 }
