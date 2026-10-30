@@ -156,8 +156,8 @@ test("listing approval never re-approves previously rejected photos", () => {
 });
 
 test("public discovery strips original purchase price and requested deposit", () => {
-  assert.match(api, /requested_deposit_paise: _depositNotPublic/);
-  assert.match(api, /original_price_paise: _purchasePriceNotPublic/);
+  assert.match(api, /delete safe\.requested_deposit_paise/);
+  assert.match(api, /delete safe\.original_price_paise/);
 });
 
 test("waitlists create in-app notices for newly available matching copies", () => {
