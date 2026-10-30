@@ -90,6 +90,28 @@ Deno.serve(async (req) => {
     return reply(200, { ...result, results: await signImages(service, rows, 300) });
   }
 
+  if (action === "check_availability") {
+    const copyId = boundedText(payload.copy_id, 64);
+    const from = boundedText(payload.available_from, 80);
+    const until = boundedText(payload.available_until, 80);
+    if (!copyId || !from || !until || !Number.isFinite(Date.parse(from)) || !Number.isFinite(Date.parse(until)) || Date.parse(until) <= Date.parse(from)) {
+      return reply(400, { error: "Choose a valid availability date range" });
+    }
+    const { data: copy } = await service.from("book_copies").select("id,listing_status,is_available_for_rent")
+      .eq("id", copyId).maybeSingle();
+    if (!copy || copy.listing_status !== "approved" || !copy.is_available_for_rent) {
+      return reply(200, { available: false, reason: "This copy is not currently listed as available" });
+    }
+    const interval = "[" + from + "," + until + ")";
+    const [blocks, reservations] = await Promise.all([
+      service.from("book_availability_blocks").select("id").eq("book_copy_id", copyId).filter("blocked_period", "ov", interval).limit(1),
+      service.from("copy_reservations").select("id,status,expires_at").eq("book_copy_id", copyId).in("status", ["hold", "confirmed", "in_use"]).filter("reserved_period", "ov", interval).limit(10),
+    ]);
+    if (blocks.error || reservations.error) return reply(500, { error: "Unable to check availability" });
+    const activeReservation = (reservations.data ?? []).some((r) => r.status !== "hold" || !r.expires_at || Date.parse(r.expires_at) > Date.now());
+    return reply(200, { available: (blocks.data ?? []).length === 0 && !activeReservation });
+  }
+
   if (action === "bundles") {
     const city = boundedText(payload.city, 80);
     const { data, error } = await service.rpc("get_public_book_bundles", { p_city: city });
@@ -146,7 +168,7 @@ Deno.serve(async (req) => {
     const keys = (imagesResult.data ?? []).map((i) => ({ object_key: i.object_key, alt_text: i.alt_text, is_cover: i.is_cover }));
     const [signed] = await signImages(service, [{ images: keys }]);
     return reply(200, {
-      copy: { id: copy.id, condition: copy.condition_summary, description: copy.description, existing_damage: detailResult.data?.existing_damage ?? "" },
+      copy: { id: copy.id, owner_id: copy.owner_id, book_title_id: copy.book_title_id, city_id: copy.city_id, locality_id: copy.locality_id, condition: copy.condition_summary, description: copy.description, existing_damage: detailResult.data?.existing_damage ?? "" },
       title: titleResult.data,
       locality: localityResult.data,
       pricing: priceResult.data,
@@ -189,9 +211,8 @@ Deno.serve(async (req) => {
         service.from("user_verifications").select("status,age_eligible").eq("user_id", copy.owner_id).maybeSingle(),
         service.from("book_listing_moderation_events").select("id,actor_user_id,action,from_status,to_status,reason,created_at").eq("book_copy_id", copy.id).order("created_at", { ascending: false }).limit(50),
       ]);
-      const imageRows = await Promise.all((images.data ?? []).map(async (image) => {
-        const { data: signed } = await service.storage.from("book-listing-public").createSignedUrl(image.object_key, 300);
-        return { id: image.id, alt_text: image.alt_text, moderation_status: image.moderation_status, is_cover: image.is_cover, url: signed?.signedUrl ?? null };
+      const imageRows = (images.data ?? []).map((image) => ({
+        id: image.id, alt_text: image.alt_text, moderation_status: image.moderation_status, is_cover: image.is_cover,
       }));
       return {
         ...copy,
