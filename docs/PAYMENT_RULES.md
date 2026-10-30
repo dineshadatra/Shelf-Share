@@ -48,6 +48,8 @@ Maintain distinct obligations and ledger accounts for:
 
 ## 4. Commission and owner proceeds
 
+Reader checkout is the rental fee plus approved tax only. The 10% platform commission is withheld from Owner rent proceeds; it is not added as a second Reader checkout fee. A security deposit, when legally/provider approved, is a separate provider-held obligation and is never part of commission or platform revenue.
+
 Base commercial rule: 10% of rental fee. Formula:
 - `gross_rent = approved rental fee`
 - `platform_commission = 10% of gross_rent` using approved rounding
