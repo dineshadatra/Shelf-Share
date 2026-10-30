@@ -306,7 +306,8 @@ begin
     raise exception 'Tax policy is not approved or no longer current'; end if;
   select * into v_booking from public.bookings where id=p_booking_id for update;
   if not found or v_booking.status not in ('owner_accepted','payment_pending') then raise exception 'Booking is no longer eligible for tax calculation'; end if;
-  update public.bookings set tax_paise=p_tax_paise,total_due_paise=rent_subtotal_paise+platform_fee_paise+p_tax_paise,
+  -- Platform commission is withheld from Owner rent proceeds; it is not an additional Reader checkout line.
+  update public.bookings set tax_paise=p_tax_paise,total_due_paise=rent_subtotal_paise+p_tax_paise,
     tax_calculated_at=now(),payment_policy_version=p_policy_version,
     policy_snapshot=policy_snapshot||jsonb_build_object('tax_policy_version',p_policy_version,'tax_calculation_reference',p_calculation_reference)
     where id=p_booking_id;
