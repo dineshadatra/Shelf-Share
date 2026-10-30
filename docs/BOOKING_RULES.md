@@ -45,7 +45,7 @@ Browse may remain available to unverified users.
 6. Provider failure/hold expiry releases inventory through an audited transition.
 7. If provider reports success after hold expiry, attempt atomic reacquisition. If conflict exists, do not force booking; initiate appropriate refund and support case.
 
-**Implemented flow:** Reader submits a request for one physical copy; the database creates a short-lived request hold and notifies the Owner. The Owner explicitly accepts or declines. Both parties must accept the current published rental agreement. Only then can the trusted backend create a payment attempt and extend the same copy reservation. Owner acceptance is not payment confirmation; booking confirmation is provider-webhook-only. The request hold TTL and maximum request horizon remain deployment configuration values.
+**Implemented flow:** Reader submits a request for one physical copy; the database creates a short-lived request hold and notifies the Owner. The Owner explicitly accepts or declines before payment. Both parties must accept the current published rental agreement. Only then can the trusted backend create a payment attempt and extend the same copy reservation. Owner acceptance is not payment confirmation; booking confirmation is provider-webhook-only. The request hold TTL, maximum request horizon and scheduling policy must be configured before checkout is enabled.
 
 ## 4. Price calculation
 
@@ -73,7 +73,7 @@ Do not treat GMV/rental value as platform revenue.
 - Extension updates due date and reservation interval atomically.
 - A delayed payment success cannot override a conflicting interval.
 - Availability is derived from reservation/rental/hold/maintenance states; never trust client calendar.
-- Hold timeout, buffer and booking horizon are configurable and unresolved.
+- Hold timeout, buffer, booking horizon and rental-day convention are stored as approved deployment policy; checkout fails closed until configured.
 
 ## 6. Handover scheduling and collection
 
@@ -151,4 +151,4 @@ Metrics: search-to-book conversion, booking failure, hold expiry, payment succes
 
 ## 13. Unresolved decisions
 
-Owner approval model; exact duration semantics; booking hold TTL; maximum advance booking horizon; buffer; handover window; no-show grace; reschedule count/cutoff; cancellation tiers; unused-day refund; extension cutoff; return inspection window; overdue grace; late fee; refund SLA; provider fee allocation; payout schedule.
+Exact duration semantics (calendar day vs elapsed 24 hours); booking request/payment hold TTL; maximum advance booking horizon; buffer; handover window; no-show grace; reschedule count/cutoff; cancellation tiers; unused-day refund; extension cutoff; return inspection window; overdue grace; late fee; refund SLA; provider fee allocation; payout schedule.
