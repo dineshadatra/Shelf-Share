@@ -9,7 +9,7 @@
 
 | ID | Priority | Topic | What the source establishes | What remains unresolved / decision required | Impact |
 |---|---|---|---|---|---|
-| OD-001 | P0 | Booking acceptance | Booking state machine includes REQUESTED and PAYMENT_PENDING; payment must be confirmed | Does Owner approve before payment, after payment, or is booking automatic after payment? Can Owner decline after payment? | Booking state machine, payment/refund and UX |
+| OD-001 | P0 | Booking acceptance | **Resolved for current implementation:** Owner accepts or declines before payment; both parties accept the current rental agreement; the trusted backend starts payment only after both gates. Owner may decline only while status is REQUESTED. | Confirm whether this remains the production commercial policy and define owner response SLA / request-hold expiry. Owner cannot decline after a payment attempt has started. | Booking operations and SLA |
 | OD-002 | P0 | Identity submission gate | Unverified users can browse but cannot list/book/financially transact; manual review required | Must identity evidence be submitted during registration, or can user browse with incomplete profile and submit only before first transaction? | Onboarding, data collection and conversion |
 | OD-003 | P0 | Address verification | Passport/PAN/DL preference; PAN is not address proof | Is separate address verification required? Which acceptable evidence and provider? | Fraud, privacy and verification operations |
 | OD-004 | P0 | Deposit legal/provider model | Deposit separate from rent/commission; no fake escrow/wallet; provider must support arrangement | Is deposit collected, authorised, tokenised or otherwise handled? Who holds it? When/how released? Can any amount be held during dispute? | Provider selection, legal risk and payment architecture |
@@ -52,8 +52,8 @@
 
 ## Contradictions and ambiguities identified
 
-### A. No direct contradiction, but a critical state-machine ambiguity
-The source gives a primary flow beginning with REQUESTED and then PAYMENT_PENDING, but does not say whether Owner acceptance happens before payment or whether payment itself confirms the booking. This must be resolved before implementation.
+### A. Booking acceptance is selected for the implementation baseline
+The current implementation uses REQUESTED → OWNER_ACCEPTED → PAYMENT_PENDING. The Owner can accept or decline before payment. Both parties must accept the current rental agreement before the trusted backend initiates payment. Payment confirmation remains provider-webhook-only. Production owners should still approve the response SLA and request-hold expiry.
 
 ### B. Identity document preference versus address verification
 Passport/PAN/Driving Licence preference is stated, while the source correctly notes PAN is not address proof and asks whether additional address verification is needed. The required verification standard is therefore incomplete.
