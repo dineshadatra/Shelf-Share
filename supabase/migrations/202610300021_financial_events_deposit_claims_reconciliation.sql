@@ -86,7 +86,7 @@ begin
     jsonb_build_object('policy_version',p_policy_version,'provider_approval_id',v_approval.id));
   insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
   values('deposit',v_deposit,'deposit_collection_requested',
-    jsonb_build_object('deposit_id',v_deposit,'amount_paise',p_amount_paise,'provider',v_payment.provider),
+    jsonb_build_object('deposit_id',v_deposit,'amount_paise',p_amount_paise,'provider',p_provider),
     'deposit-collection-outbox:'||v_deposit::text) on conflict(idempotency_key) do nothing;
   return v_deposit;
 end;
