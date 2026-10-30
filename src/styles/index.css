@@ -260,3 +260,6 @@ button:disabled{cursor:not-allowed;opacity:.52} a{color:inherit;text-decoration:
   .admin-header-actions{width:100%}
   .waitlist-card{align-items:flex-start;flex-direction:column}
 }
+
+.discovery-map-embed{height:280px;overflow:hidden;border:1px solid var(--border);border-radius:10px;margin:6px 0 14px;background:#edf1e9}.discovery-map-embed iframe{width:100%;height:100%;border:0}
+@media(max-width:560px){.discovery-map-embed{height:230px}}
