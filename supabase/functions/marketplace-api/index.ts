@@ -162,7 +162,9 @@ async function handleWebhook(req: Request): Promise<Response> {
     const { data: deposit, error } = await service.from("deposits").select("id")
       .eq("provider", providerCode).eq("provider_reference", event.providerDepositReference).maybeSingle();
     if (error || !deposit) return reply(404, { error: "Deposit reference not found; event requires reconciliation" });
-    const claimId = text((event as unknown as Json).providerClaimReference, 80);
+    const providerClaimReference = text(event.providerClaimReference, 80);
+    const claimId = providerClaimReference && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(providerClaimReference)
+      ? providerClaimReference : null;
     const { data, error: applyError } = await service.rpc("apply_verified_deposit_event", {
       p_provider: providerCode, p_event_id: event.eventId, p_deposit_id: deposit.id,
       p_event_type: eventType, p_provider_reference: event.providerDepositReference,
