@@ -295,7 +295,7 @@ begin
   end if;
 
   update public.user_verifications
-    set status = 'pending', identity_verified_at = null, reviewed_by = null, reviewed_at = null,
+    set status = 'pending', identity_verified_at = null, address_verified_at = null, reviewed_by = null, reviewed_at = null,
         rejection_reason_code = null
     where user_id = v_user_id;
   insert into public.verification_audit(user_id,actor_user_id,action,to_status,metadata)
