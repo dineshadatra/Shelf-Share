@@ -8,6 +8,11 @@ const hardeningSql = await read("../../supabase/migrations/202610300010_catalogu
 const fixesSql = await read("../../supabase/migrations/202610300011_catalogue_listing_fixes.sql");
 const auditSql = await read("../../supabase/migrations/202610300012_catalogue_moderation_audit_fixes.sql");
 const cacheSql = await read("../../supabase/migrations/202610300013_isbn_metadata_cache.sql");
+const bundleWaitlistSql = await read("../../supabase/migrations/202610300014_bundles_and_waitlist_notifications.sql");
+const reservationReleaseSql = await read("../../supabase/migrations/202610300015_waitlist_reservation_release.sql");
+const moderationFixSql = await read("../../supabase/migrations/202610300016_catalogue_moderation_photo_and_bundle_fixes.sql");
+const bundleOwnerUi = await read("../../src/pages/owner-dashboard-page.tsx");
+const bundleAdminUi = await read("../../src/pages/admin-bundle-queue-page.tsx");
 const api = await read("../../supabase/functions/catalogue-api/index.ts");
 const isbn = await read("../../src/lib/catalogue.ts");
 const listingUi = await read("../../src/pages/list-book-page.tsx");
@@ -140,4 +145,40 @@ test("ISBN lookup is user-initiated, backend proxied and cached", () => {
   assert.match(cacheSql, /enable row level security/);
   assert.match(cacheSql, /from public,anon,authenticated/);
   assert.match(isbn, /functions.invoke\("catalogue-api"/);
+});
+
+test("listing approval never re-approves previously rejected photos", () => {
+  assert.match(moderationFixSql, /moderation_status='pending_review'/);
+  assert.match(moderationFixSql, /moderation_status in \('pending_review','approved'\)/);
+});
+
+test("public discovery strips original purchase price and requested deposit", () => {
+  assert.match(api, /requested_deposit_paise: _depositNotPublic/);
+  assert.match(api, /original_price_paise: _purchasePriceNotPublic/);
+});
+
+test("waitlists create in-app notices for newly available matching copies", () => {
+  assert.match(bundleWaitlistSql, /book_waitlist_notifications/);
+  assert.match(bundleWaitlistSql, /queue_waitlist_notifications_for_copy/);
+  assert.match(bundleWaitlistSql, /preferred_locality_id/);
+  assert.match(bundleWaitlistSql, /reserved_period/);
+  assert.match(reservationReleaseSql, /reservation_release_notify_waitlist/);
+  assert.match(reservationReleaseSql, /released','expired','cancelled/);
+  assert.match(wishlistUi, /mark_book_waitlist_notification_read/);
+});
+
+test("bundle creation and moderation are separate from copy approval", () => {
+  assert.match(bundleOwnerUi, /create_book_bundle/);
+  assert.match(bundleAdminUi, /admin_bundle_queue/);
+  assert.match(bundleAdminUi, /moderate_bundle/);
+  assert.match(bundleWaitlistSql, /book_bundle_moderation_events/);
+});
+
+test("public bundles disappear when one included physical copy is unavailable", () => {
+  assert.match(moderationFixSql, /not bc\.is_available_for_rent/);
+  assert.match(moderationFixSql, /bc\.listing_status<>'approved'/);
+});
+
+test("public book detail is readable before the authenticated Edge API branch", () => {
+  assert.ok(api.indexOf('action === "listing_detail"') < api.indexOf("getAuthenticatedUser(req)"));
 });
