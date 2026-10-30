@@ -85,8 +85,8 @@ export function LiveCameraCapture({ onCapture }: { onCapture: (file: File | null
   return <div className="camera-capture">
     {error && <Alert tone="warning">{error}</Alert>}
     <div className="camera-preview">
-      {captured ? <img src={captured} alt="Captured profile preview" /> :
-        <video ref={videoRef} autoPlay playsInline muted aria-label="Live front camera preview" />}
+      <video ref={videoRef} autoPlay playsInline muted aria-label="Live front camera preview" style={{ display: captured ? "none" : "block" }} />
+      {captured && <img src={captured} alt="Captured profile preview" />}
       {!captured && !active && <div className="camera-placeholder"><Camera size={28}/><span>Camera preview will appear here</span></div>}
     </div>
     <div className="camera-actions">
