@@ -20,21 +20,9 @@ test("phone authentication is SMS-only and email OTP is not invoked", () => {
   assert.match(login, /verifyOtp\(\{[^}]*type:\s*"sms"/s);
   assert.match(register, /signInWithOtp\(\{\s*phone:/);
   assert.match(register, /channel:\s*"sms"/);
+  assert.match(register, /verifyOtp\(\{[^}]*type:\s*"sms"/s);
   assert.doesNotMatch(login + register, /signInWithOtp\(\{\s*email:/);
   assert.doesNotMatch(login + register, /verifyOtp\(\{[^}]*type:\s*"email"/s);
-});
-
-
-test("SMS OTP requests pass Turnstile tokens and fail closed when production CAPTCHA is required", () => {
-  assert.match(login, /captchaToken \? \{ captchaToken \}/);
-  assert.match(register, /captchaToken \? \{ captchaToken \}/);
-  assert.match(login, /captchaRequired && !captchaToken/);
-  assert.match(register, /captchaRequired && !captchaToken/);
-  assert.match(captcha, /VITE_TURNSTILE_SITE_KEY/);
-  assert.match(captcha, /VITE_CAPTCHA_REQUIRED/);
-  assert.match(captcha, /tone="error"/);
-  assert.match(captcha, /onExpire/);
-  assert.match(captcha, /onError/);
 });
 
 test("OTP expiry, resend interval and server rate limits are configured", () => {
@@ -49,7 +37,7 @@ test("OTP expiry, resend interval and server rate limits are configured", () => 
 });
 
 test("registration enforces phone verification, age, camera object and accepted legal version server-side", () => {
-  const fn = migration.slice(migration.indexOf("create or replace function public.complete_registration"), migration.indexOf("create or replace function public.submit_identity_verification"));
+  const fn = migration.slice(migration.indexOf("create or replace function public.complete_registration"), migration.indexOf("create or replace function public.sync_verified_phone"));
   assert.match(fn, /phone_confirmed_at/);
   assert.match(fn, /p_date_of_birth/);
   assert.match(fn, /interval '18 years'/);
@@ -58,22 +46,21 @@ test("registration enforces phone verification, age, camera object and accepted 
   assert.match(fn, /registration_acceptances/);
 });
 
-
 test("phone changes require the new number OTP and synchronise the verified phone timestamp", () => {
   assert.match(profile, /updateUser\(\{ phone: formatted \}\)/);
   assert.match(profile, /type: "phone_change"/);
   assert.match(profile, /rpc\("sync_verified_phone"\)/);
   const fn = migration.slice(migration.indexOf("create or replace function public.sync_verified_phone"), migration.indexOf("create or replace function public.submit_identity_verification"));
   assert.match(fn, /auth\.uid\(\)/);
-  assert.match(fn, /auth\.uid\(\)/);
+  assert.match(fn, /auth\.users/);
   assert.match(fn, /phone_confirmed_at/);
   assert.match(fn, /phone_number_changed/);
   assert.ok(fn.includes("as $func$") && fn.includes("$func$;"));
 });
 
-test("auth migration has balanced SQL function delimiters", () => {
-  assert.equal((migration.match(/\\$\\$/g) ?? []).length % 2, 0);
-  assert.equal((migration.match(/\\$func\\$/g) ?? []).length % 2, 0);
+test("auth migration has balanced SQL function delimiters and a single transaction", () => {
+  assert.equal((migration.match(/\$\$/g) ?? []).length % 2, 0);
+  assert.equal((migration.match(/\$func\$/g) ?? []).length % 2, 0);
   assert.doesNotMatch(migration, /\bas \$(?:\s|declare)/);
   assert.equal((migration.match(/\bcommit;/g) ?? []).length, 1);
 });
@@ -106,6 +93,7 @@ test("private identity, selfie and profile buckets have no browser read policy",
 });
 
 test("admin verification endpoints authenticate staff roles and prevent self review", () => {
+  assert.match(edge, /auth\.getUser\(\)/);
   assert.match(edge, /verification_reviewer/);
   assert.match(edge, /auth\.admin\.updateUserById/);
   assert.match(edge, /ban_duration: "876000h"/);
@@ -127,4 +115,16 @@ test("review transitions require a reason and suspensions invalidate verified st
   assert.match(migration, /status='needs_resubmission'/);
   assert.match(migration, /status='rejected', identity_verified_at=null,[\s\S]*rejection_reason_code='account_suspended'/);
   assert.match(migration, /account_status='suspended'/);
+});
+
+test("SMS OTP requests pass Turnstile tokens and fail closed when production CAPTCHA is required", () => {
+  assert.match(login, /captchaToken \? \{ captchaToken \}/);
+  assert.match(register, /captchaToken \? \{ captchaToken \}/);
+  assert.match(login, /captchaRequired && !captchaToken/);
+  assert.match(register, /captchaRequired && !captchaToken/);
+  assert.match(captcha, /VITE_TURNSTILE_SITE_KEY/);
+  assert.match(captcha, /VITE_CAPTCHA_REQUIRED/);
+  assert.match(captcha, /tone="error"/);
+  assert.match(captcha, /onExpire/);
+  assert.match(captcha, /onError/);
 });
