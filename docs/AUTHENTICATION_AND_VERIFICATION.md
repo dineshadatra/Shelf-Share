@@ -1,0 +1,35 @@
+# ShelfShare authentication and manual verification
+
+## Implemented application design
+
+- Passwordless Indian mobile sign-in uses Supabase Auth SMS OTP only. Email OTP and password sign-in are not called by the web client.
+- OTP validity is configured to 300 seconds locally; the resend frequency is configured to 60 seconds. Supabase Auth owns the OTP generation, verification, expiry, resend throttling, and IP/project rate limits. The React countdown is only a user-interface hint.
+- Access tokens use a one-hour JWT lifetime in the local configuration. Refresh-token rotation is enabled. The client persists and refreshes the session; logout calls Supabase Auth signOut.
+- Phone changes use Supabase Auth updateUser({ phone }) followed by verifyOtp(type: 'phone_change').
+- Registration requires a verified phone, display name, DOB >= 18, a camera-captured JPEG profile photo, and acceptance of the active Terms and Privacy versions.
+- The registration RPC checks the verified phone timestamp and DOB in Postgres. Registration policies must be activated by an authorised product/legal operator before registration can complete.
+- Identity documents are stored in private Storage buckets. Browser clients can upload only to their own user-prefixed paths. No client read policy exists for identity documents, selfie or private profile captures.
+- Manual review is performed with the verification-admin Edge Function and the review_verification_case database function. Reviewer role, assignment and the cannot-review-own-account constraint are checked server-side.
+- Marketplace listing and booking gates continue to depend on verified status in database policies/functions; UI state is not treated as authority.
+
+## Provider and deployment steps
+
+1. Apply migrations with `supabase db push` after reviewing the SQL against the target project.
+2. In Supabase Authentication > Sign In / Providers, enable Phone and disable Email as a sign-in method. Configure an approved SMS provider and the India sender/template/DLT requirements applicable to your deployment.
+3. Set OTP expiry to 300 seconds, minimum resend interval to 60 seconds, and configure SMS/hour, sign-in/IP, and OTP verification/IP limits. Configure CAPTCHA/Turnstile before production launch.
+4. Configure the hosted project's JWT expiry, refresh token rotation, reuse interval, and session inactivity/maximum lifetime policies in the Dashboard. The checked-in TOML is for local Supabase development and is not automatically pushed to hosted Auth settings.
+5. Add the Supabase project URL and publishable/anon key to frontend environment variables. Never put the service-role key in `VITE_*` variables or browser code.
+6. Deploy the Edge Function: `supabase functions deploy verification-admin`. It requires `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` in the Edge Function environment. The service-role key is server-only.
+7. Assign `verification_reviewer`, `admin`, or `super_admin` roles to actual reviewer users through a controlled back-office migration/process. No self-service role assignment is exposed.
+8. After Terms and Privacy Notice have been reviewed and published, insert one active, approved row in `public.registration_policy_versions` with HTTPS URLs and distinct version identifiers. This intentionally blocks registration while legal copy is not approved.
+9. Run `supabase test db` against a disposable local Supabase stack and `npm run build`, `npm run lint`, and `npm run test:security`.
+
+## Important security boundaries and launch blockers
+
+- A web browser's getUserMedia flow can require a live camera capture in the normal application path. A browser alone cannot cryptographically prove that a sensor feed is genuine or prevent a modified client from submitting a replayed image. The current capture is not biometric liveness/face matching. Add a specialist liveness provider if spoof resistance or regulated identity proofing is required.
+- The uploaded live profile photo is kept private in this implementation. A public avatar derivative/consent policy has not been defined and is not generated.
+- The optional address-evidence upload is a workflow attachment only. PAN is not treated as address proof. Accepted address evidence, when required, must be specified by the product/legal policy before reviewers rely on it.
+- Supabase Auth applies the platform's OTP and request protections. The UI cooldown is not a security control. Hosted Auth rate limits and CAPTCHA must be configured in the Dashboard as well as local TOML.
+- Admin access to documents is intentionally limited to short-lived signed URLs from a role-checked Edge Function, and each preview request is written to an access-audit table. Do not expose service-role credentials to the frontend.
+- The initial reviewer implementation has role and self-review checks. Before launch, define maker-checker requirements, reviewer training, data retention/deletion periods, appeals, address verification standards, support SLAs and a second-factor policy for staff.
+- The SQL migration has not been applied to a live project by this change. Test it against the exact Supabase/Postgres version and existing migrations before enabling the app.
