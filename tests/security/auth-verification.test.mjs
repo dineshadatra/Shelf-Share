@@ -3,13 +3,14 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [config, migration, securityMigration, edge, login, register] = await Promise.all([
+const [config, migration, securityMigration, edge, login, register, captcha] = await Promise.all([
   read("../../supabase/config.toml"),
   read("../../supabase/migrations/202610300007_authentication_verification.sql"),
   read("../../supabase/migrations/202610300006_security_rls_functions.sql"),
   read("../../supabase/functions/verification-admin/index.ts"),
   read("../../src/pages/login-page.tsx"),
-  read("../../src/pages/register-page.tsx")
+  read("../../src/pages/register-page.tsx"),
+  read("../../src/components/auth/auth-captcha.tsx")
 ]);
 
 test("phone authentication is SMS-only and email OTP is not invoked", () => {
@@ -20,6 +21,19 @@ test("phone authentication is SMS-only and email OTP is not invoked", () => {
   assert.match(register, /channel:\s*"sms"/);
   assert.doesNotMatch(login + register, /signInWithOtp\(\{\s*email:/);
   assert.doesNotMatch(login + register, /verifyOtp\(\{[^}]*type:\s*"email"/s);
+});
+
+
+test("SMS OTP requests pass Turnstile tokens and fail closed when production CAPTCHA is required", () => {
+  assert.match(login, /captchaToken \? \{ captchaToken \}/);
+  assert.match(register, /captchaToken \? \{ captchaToken \}/);
+  assert.match(login, /captchaRequired && !captchaToken/);
+  assert.match(register, /captchaRequired && !captchaToken/);
+  assert.match(captcha, /VITE_TURNSTILE_SITE_KEY/);
+  assert.match(captcha, /VITE_CAPTCHA_REQUIRED/);
+  assert.match(captcha, /tone="error"/);
+  assert.match(captcha, /onExpire/);
+  assert.match(captcha, /onError/);
 });
 
 test("OTP expiry, resend interval and server rate limits are configured", () => {
