@@ -227,9 +227,18 @@ Deno.serve(async (req) => {
   }
 
   if (action === "my_waitlist") {
-    const { data, error } = await userClient.rpc("get_my_book_waitlist");
+    const [entriesResult, notificationsResult] = await Promise.all([
+      userClient.rpc("get_my_book_waitlist"),
+      userClient.rpc("get_my_book_waitlist_notifications"),
+    ]);
+    if (entriesResult.error || notificationsResult.error) return reply(400, { error: entriesResult.error?.message ?? notificationsResult.error?.message ?? "Unable to load waitlist" });
+    return reply(200, { entries: entriesResult.data ?? [], notifications: notificationsResult.data ?? [] });
+  }
+
+  if (action === "owner_bundles") {
+    const { data, error } = await userClient.rpc("get_my_book_bundles");
     if (error) return reply(400, { error: error.message });
-    return reply(200, { entries: data ?? [] });
+    return reply(200, { bundles: data ?? [] });
   }
 
   const { data: roles, error: roleError } = await service.from("user_roles")
@@ -240,8 +249,47 @@ Deno.serve(async (req) => {
   const isAdmin = roleNames.some((role) => ["admin", "super_admin"].includes(role));
   if (action === "moderator_me") return isModerator ? reply(200, { authorized: true }) : reply(403, { error: "Marketplace moderator permission required" });
 
-  if (action === "admin_queue" || action === "preview_image" || action === "moderate_listing" || action === "moderate_bundle") {
+  if (action === "admin_queue" || action === "admin_bundle_queue" || action === "preview_image" || action === "preview_price_evidence" || action === "moderate_listing" || action === "moderate_bundle") {
     if (!isModerator) return reply(403, { error: "Marketplace moderator permission required" });
+  }
+
+  if (action === "admin_bundle_queue") {
+    const { data: rows, error } = await service.from("book_bundles")
+      .select("id,owner_id,city_id,name,description,status,created_at")
+      .in("status", ["pending_review", "approved", "paused"])
+      .order("created_at", { ascending: true }).limit(100);
+    if (error) return reply(500, { error: "Unable to load bundle moderation queue" });
+    const owners = [...new Set((rows ?? []).map((row) => row.owner_id))];
+    const cities = [...new Set((rows ?? []).map((row) => row.city_id))];
+    const [profiles, cityRows] = await Promise.all([
+      owners.length ? service.from("profiles").select("id,display_name,account_status").in("id", owners) : Promise.resolve({ data: [] }),
+      cities.length ? service.from("cities").select("id,name").in("id", cities) : Promise.resolve({ data: [] }),
+    ]);
+    const profileMap = new Map((profiles.data ?? []).map((row) => [row.id, row]));
+    const cityMap = new Map((cityRows.data ?? []).map((row) => [row.id, row.name]));
+    const bundles = await Promise.all((rows ?? []).map(async (bundle) => {
+      const [items, history] = await Promise.all([
+        service.from("book_bundle_items").select("book_copy_id,display_order").eq("bundle_id", bundle.id).order("display_order"),
+        service.from("book_bundle_moderation_events").select("id,actor_user_id,action,from_status,to_status,reason,created_at").eq("bundle_id", bundle.id).order("created_at", { ascending: false }).limit(50),
+      ]);
+      const copyIds = (items.data ?? []).map((item) => item.book_copy_id);
+      const copies = copyIds.length ? await service.from("book_copies").select("id,listing_status,is_available_for_rent,book_title_id").in("id", copyIds) : { data: [] };
+      const titleIds = [...new Set((copies.data ?? []).map((copy) => copy.book_title_id))];
+      const titles = titleIds.length ? await service.from("book_titles").select("id,title,authors").in("id", titleIds) : { data: [] };
+      const titleMap = new Map((titles.data ?? []).map((title) => [title.id, title]));
+      const copyMap = new Map((copies.data ?? []).map((copy) => [copy.id, copy]));
+      return {
+        ...bundle,
+        owner: profileMap.get(bundle.owner_id) ?? { display_name: "Member", account_status: "unknown" },
+        city: cityMap.get(bundle.city_id) ?? "Unknown city",
+        items: copyIds.map((copyId) => {
+          const copy = copyMap.get(copyId);
+          return { copy_id: copyId, status: copy?.listing_status ?? "unknown", available: copy?.is_available_for_rent === true, title: copy ? titleMap.get(copy.book_title_id) ?? null : null };
+        }),
+        history: history.data ?? [],
+      };
+    }));
+    return reply(200, { bundles });
   }
 
   if (action === "admin_queue") {
