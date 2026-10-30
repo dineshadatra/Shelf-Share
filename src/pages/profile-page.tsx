@@ -8,7 +8,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
-import { AuthCaptcha, captchaRequired } from "@/components/auth/auth-captcha";
 import { useAuth } from "@/contexts/auth-context";
 import { supabase, normaliseIndianPhone, userFacingAuthError } from "@/lib/supabase";
 
@@ -23,7 +22,6 @@ export default function ProfilePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supabase || !user) return;
@@ -35,17 +33,16 @@ export default function ProfilePage() {
   const sendPhoneChangeOtp = async () => {
     setError(""); setNotice("");
     if (!supabase) return;
-    if (captchaRequired && !captchaToken) { setError("Complete the security check before requesting a phone-change OTP."); return; }
     try {
       const formatted = normaliseIndianPhone(newPhone);
       setBusy(true);
-      const { error: updateError } = await supabase.auth.updateUser({ phone: formatted, ...(captchaToken ? { captchaToken } : {}) });
+      const { error: updateError } = await supabase.auth.updateUser({ phone: formatted });
       if (updateError) throw updateError;
       setNormalisedPhone(formatted);
       setChangeStep("otp");
       setNotice(`A confirmation code was sent to ${formatted}.`);
     } catch (reason) { setError(userFacingAuthError(reason)); }
-    finally { setBusy(false); setCaptchaToken(null); }
+    finally { setBusy(false); }
   };
 
   const confirmPhoneChange = async () => {
@@ -89,7 +86,6 @@ export default function ProfilePage() {
           <h3><Smartphone size={17}/> Change mobile number</h3>
           {changeStep === "phone" ? <>
             <Input label="New Indian mobile number" name="new-phone" type="tel" placeholder="+91 98765 43210" value={newPhone} onChange={(event) => setNewPhone(event.target.value)} hint="A confirmation OTP will be sent to the new number. Your current number remains active until confirmation."/>
-            <AuthCaptcha resetKey={0} onToken={setCaptchaToken}/>
             <Button variant="outline" disabled={busy || !newPhone.trim() || (captchaRequired && !captchaToken)} onClick={() => void sendPhoneChangeOtp()}>{busy ? "Sending…" : "Verify new number"}</Button>
           </> : <>
             <Input label={`Confirmation code sent to ${normalisedPhone}`} name="phone-change-otp" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={otp} onChange={(event) => setOtp(event.target.value.replace(/\\D/g,"").slice(0,6))}/>
