@@ -27,6 +27,9 @@ export default function RegisterPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const navigate = useNavigate();
+  const ageCutoff = new Date();
+  ageCutoff.setFullYear(ageCutoff.getFullYear() - 18);
+  const maxAdultDob = [ageCutoff.getFullYear(), String(ageCutoff.getMonth() + 1).padStart(2, "0"), String(ageCutoff.getDate()).padStart(2, "0")].join("-");
 
   useEffect(() => {
     if (!user || !supabase) return;
@@ -114,7 +117,7 @@ export default function RegisterPage() {
       {error && <Alert tone="warning">{error}</Alert>}
       {step === "details" && <>
         <Input label="Your name" name="name" autoComplete="name" placeholder="Name as you’d like it shown" required maxLength={80} value={name} onChange={(event) => setName(event.target.value)}/>
-        <Input label="Date of birth" name="dob" type="date" required max={new Date().toISOString().slice(0,10)} value={dob} onChange={(event) => setDob(event.target.value)} hint="You must be at least 18 years old to register."/>
+        <Input label="Date of birth" name="dob" type="date" required max={maxAdultDob} value={dob} onChange={(event) => setDob(event.target.value)} hint="You must be at least 18 years old to register."/>
         <Input label="Indian mobile number" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" required readOnly={Boolean(user)} value={phone} onChange={(event) => setPhone(event.target.value)} hint={user ? "This number is already verified for your current session." : "Mobile OTP only. No email OTP is used."}/>
         <div className="legal-consent">
           {policyLoading ? <p>Checking current legal terms…</p> : policy ? <>
