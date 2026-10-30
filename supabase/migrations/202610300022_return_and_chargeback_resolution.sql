@@ -47,6 +47,18 @@ begin
       'handover_location_id',b.requested_handover_location_id,'handover_location',h.name,
       'payment_status',(select p.status from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
       'payment_amount_paise',(select p.amount_paise from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
+      'owner_agreement_accepted',exists(
+        select 1 from public.rental_agreements ra join public.legal_documents ld on ld.id=ra.legal_document_id
+        where ra.booking_id=b.id and ra.user_id=b.owner_id and ra.document_version=ld.version
+          and ld.document_type='rental_agreement' and ld.is_published and ld.effective_from<=now()
+          and (ld.effective_until is null or ld.effective_until>now())
+      ),
+      'reader_agreement_accepted',exists(
+        select 1 from public.rental_agreements ra join public.legal_documents ld on ld.id=ra.legal_document_id
+        where ra.booking_id=b.id and ra.user_id=b.reader_id and ra.document_version=ld.version
+          and ld.document_type='rental_agreement' and ld.is_published and ld.effective_from<=now()
+          and (ld.effective_until is null or ld.effective_until>now())
+      ),
       'rental_start_at',b.rental_start_at,'rental_due_at',b.rental_due_at,
       'active_handover',(select jsonb_build_object(
         'id',s.id,'type',s.handover_type,'expires_at',s.expires_at,'status',s.status,
