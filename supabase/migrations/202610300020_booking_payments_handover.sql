@@ -61,6 +61,8 @@ create table if not exists public.booking_workflow_configuration (
   handover_ttl_seconds integer not null default 300,
   rental_duration_mode text check (rental_duration_mode in ('elapsed_24h','calendar_day')),
   configuration_version text not null,
+  tax_policy_version text,
+  cancellation_policy_version text,
   approved_by uuid references auth.users(id) on delete restrict,
   approved_at timestamptz,
   updated_at timestamptz not null default now(),
@@ -453,8 +455,9 @@ begin
   select * into v_booking from public.bookings where id=p_booking_id for update;
   if not found or v_booking.status<>'owner_accepted' then raise exception 'Only Owner-accepted bookings can proceed to payment'; end if;
   select * into v_cfg from public.booking_workflow_configuration where id=true and is_active;
-  if not found or v_cfg.payment_hold_seconds is null or v_cfg.rental_duration_mode is null then
-    raise exception 'Booking timing policy must be approved before checkout is enabled';
+  if not found or v_cfg.payment_hold_seconds is null or v_cfg.rental_duration_mode is null
+    or v_cfg.tax_policy_version is null or v_cfg.cancellation_policy_version is null then
+    raise exception 'Booking, tax and cancellation policies must be approved before checkout is enabled';
   end if;
   select * into v_provider from public.payment_provider_approvals
     where provider_code=p_provider and enabled_for_rent and (expires_at is null or expires_at>now());
@@ -509,6 +512,7 @@ as $$
 declare
   v_payment public.payments%rowtype; v_booking public.bookings%rowtype; v_item public.rental_items%rowtype;
   v_reservation public.copy_reservations%rowtype; v_inserted bigint; v_provider_dispute uuid;
+  v_inventory_conflict boolean;
 begin
   if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Trusted backend required'; end if;
   if p_event_id is null or length(p_event_id)>200 or p_payload_sha256 !~ '^[a-f0-9]{64}$' then raise exception 'Invalid verified webhook envelope'; end if;
@@ -546,29 +550,23 @@ begin
         where id=v_payment.id;
       update public.bookings set status='disputed',cancellation_reason_code='captured_without_reservation'
         where id=v_booking.id;
-      update public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
+      insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
         values('payment',v_payment.id,'refund_after_unreserved_capture',
           jsonb_build_object('payment_id',v_payment.id,'booking_id',v_booking.id,'reason','captured_without_reservation'),
           'late-capture-refund:'||v_payment.id::text) on conflict(idempotency_key) do nothing;
     else
       update public.copy_reservations set status='expired'
-       where id=v_reservation.id and status='hold' and expires_at<=now();
+       where book_copy_id=v_item.book_copy_id and status='hold' and expires_at<=now();
       select * into v_reservation from public.copy_reservations where id=v_reservation.id;
-      if v_reservation.status='expired' then
-        update public.copy_reservations set status='hold',expires_at=now()+interval '2 minutes'
-          where id=v_reservation.id;
-      end if;
-      begin
-        update public.copy_reservations set status='confirmed',expires_at=null where id=v_reservation.id;
-        update public.payments set status='captured',captured_at=coalesce(captured_at,now()),
-          provider_payment_id=coalesce(provider_payment_id,p_provider_payment_id),provider_status=p_event_type,last_provider_event_at=now()
-          where id=v_payment.id;
-        update public.bookings set status='confirmed' where id=v_booking.id;
-        insert into public.commission_ledger(booking_id,payment_id,commission_rate_bps,rent_basis_paise,commission_paise,policy_version)
-          values(v_booking.id,v_payment.id,1000,v_booking.rent_subtotal_paise,v_booking.platform_fee_paise,
-            coalesce(v_booking.commission_policy_version,'commission_10pct_v1'))
-          on conflict(booking_id,policy_version) do nothing;
-      exception when exclusion_violation then
+      select (
+        exists(select 1 from public.book_availability_blocks x
+          where x.book_copy_id=v_item.book_copy_id and x.blocked_period&&v_item.reserved_period)
+        or exists(select 1 from public.copy_reservations x
+          where x.book_copy_id=v_item.book_copy_id and x.id<>v_reservation.id
+            and x.status in ('hold','confirmed','in_use') and x.reserved_period&&v_item.reserved_period
+            and (x.status<>'hold' or x.expires_at is null or x.expires_at>now()))
+      ) into v_inventory_conflict;
+      if v_inventory_conflict then
         update public.payments set status='reconciliation_required',provider_status='captured_inventory_conflict',
           captured_at=coalesce(captured_at,now()),provider_payment_id=coalesce(provider_payment_id,p_provider_payment_id)
           where id=v_payment.id;
@@ -578,7 +576,29 @@ begin
           values('payment',v_payment.id,'refund_after_inventory_conflict',
             jsonb_build_object('payment_id',v_payment.id,'booking_id',v_booking.id,'reason','captured_inventory_conflict'),
             'inventory-conflict-refund:'||v_payment.id::text) on conflict(idempotency_key) do nothing;
-      end;
+      else
+        begin
+          update public.copy_reservations set status='confirmed',expires_at=null where id=v_reservation.id;
+          update public.payments set status='captured',captured_at=coalesce(captured_at,now()),
+            provider_payment_id=coalesce(provider_payment_id,p_provider_payment_id),provider_status=p_event_type,last_provider_event_at=now()
+            where id=v_payment.id;
+          update public.bookings set status='confirmed' where id=v_booking.id;
+          insert into public.commission_ledger(booking_id,payment_id,commission_rate_bps,rent_basis_paise,commission_paise,policy_version)
+            values(v_booking.id,v_payment.id,1000,v_booking.rent_subtotal_paise,v_booking.platform_fee_paise,
+              coalesce(v_booking.commission_policy_version,'commission_10pct_v1'))
+            on conflict(booking_id,policy_version) do nothing;
+        exception when exclusion_violation then
+          update public.payments set status='reconciliation_required',provider_status='captured_inventory_conflict',
+            captured_at=coalesce(captured_at,now()),provider_payment_id=coalesce(provider_payment_id,p_provider_payment_id)
+            where id=v_payment.id;
+          update public.bookings set status='disputed',cancellation_reason_code='captured_inventory_conflict'
+            where id=v_booking.id;
+          insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
+            values('payment',v_payment.id,'refund_after_inventory_conflict',
+              jsonb_build_object('payment_id',v_payment.id,'booking_id',v_booking.id,'reason','captured_inventory_conflict'),
+              'inventory-conflict-refund:'||v_payment.id::text) on conflict(idempotency_key) do nothing;
+        end;
+      end if;
     end if;
   elsif p_event_type in ('payment.failed','payment.cancelled','order.failed') then
     if v_payment.status not in ('captured','partially_refunded','refunded') then
@@ -970,6 +990,9 @@ declare v_user uuid:=auth.uid(); v_earning public.owner_earnings%rowtype; v_appr
   v_vendor public.provider_vendor_accounts%rowtype; v_payout uuid; v_cfg public.booking_workflow_configuration%rowtype;
 begin
   if v_user is null then raise exception 'Authentication required'; end if;
+  if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then
+    raise exception 'Valid payout idempotency key required';
+  end if;
   select * into v_earning from public.owner_earnings where id=p_earning_id and owner_id=v_user for update;
   if not found or v_earning.status<>'eligible' then raise exception 'No eligible owner settlement found'; end if;
   select * into v_approval from public.payment_provider_approvals
