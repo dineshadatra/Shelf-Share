@@ -38,5 +38,8 @@ otp_length = 6
 otp_expiry = 300
 max_frequency = "60s"
 
-# Configure one SMS provider in Supabase Dashboard for hosted projects.
-# Keep provider credentials in Supabase secrets / environment variables only.
+[functions.verification-admin]
+verify_jwt = true
+
+# Configure the SMS provider in Supabase Dashboard. Credentials belong in server-side
+# secrets only; never in VITE_* browser variables.
