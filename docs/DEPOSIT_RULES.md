@@ -57,9 +57,7 @@ The product requirement says deposit is withdrawable only when there is no activ
 - provider product permits the requested release;
 - identity/account is not under lawful restriction.
 
-An account-level “available deposit” display must be backed by provider-confirmed funds and a legally valid mechanism. If the user has any active rental, withdrawal request is rejected with a clear reason. Do not move money merely because the UI shows a balance.
-
-Clarify in legal/provider review whether deposits are per booking, pooled by user, or another structure. The source requirement does not settle this.
+The implementation is per-booking only. ShelfShare does not aggregate deposits into an account-level wallet or show a pooled withdrawable balance. Each release request is tied to one booking and requires provider-confirmed custody. If the payer has any active rental, an open claim/dispute, or a provider hold, release is rejected with a clear reason. Do not move money merely because the UI shows a balance.
 
 ## 6. Release after rental closure
 
@@ -93,7 +91,7 @@ Clarify in legal/provider review whether deposits are per booking, pooled by use
 
 - Whether deposit is required for every rental or only selected books.
 - Deposit calculation formula and maximum.
-- Per-book vs account-level deposit.
+- Written confirmation that the per-booking custody and release arrangement is supported by the selected PA/bank product.
 - Legal holder and account structure.
 - PA/bank product and permitted hold duration.
 - Whether and how disputed amount can remain held.
