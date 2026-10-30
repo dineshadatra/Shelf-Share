@@ -142,7 +142,11 @@ Deno.serve(async (req) => {
     if (error) return reply(400, { error: error.message });
     const result = (data ?? {}) as Record<string, unknown>;
     const rows = Array.isArray(result.results) ? result.results as Record<string, unknown>[] : [];
-    return reply(200, { ...result, results: await signImages(service, rows, 300) });
+    const safeRows = rows.map((row) => {
+      const { requested_deposit_paise: _depositNotPublic, original_price_paise: _purchasePriceNotPublic, ...safe } = row;
+      return safe;
+    });
+    return reply(200, { ...result, results: await signImages(service, safeRows, 300) });
   }
 
   if (action === "check_availability") {
