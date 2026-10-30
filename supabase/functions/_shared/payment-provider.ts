@@ -95,6 +95,7 @@ export type VerifiedProviderEvent = {
   providerTransferReference: string | null;
   providerDepositReference: string | null;
   providerDisputeReference: string | null;
+  providerClaimReference?: string | null;
   amountPaise: number;
   currency: Currency;
   occurredAt: string | null;
