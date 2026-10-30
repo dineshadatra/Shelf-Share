@@ -5,6 +5,7 @@ import { AuthLayout } from "@/layouts/auth-layout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert } from "@/components/ui/alert";
+import { AuthCaptcha, captchaRequired } from "@/components/auth/auth-captcha";
 import { supabase, normaliseIndianPhone, userFacingAuthError } from "@/lib/supabase";
 
 export default function LoginPage() {
@@ -15,6 +16,8 @@ export default function LoginPage() {
   const [seconds, setSeconds] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
   const navigate = useNavigate();
   const location = useLocation();
   const [search] = useSearchParams();
@@ -31,16 +34,17 @@ export default function LoginPage() {
   const requestOtp = async () => {
     setError("");
     if (!supabase) { setError("Supabase is not configured. Add the VITE_SUPABASE environment variables."); return; }
+    if (captchaRequired && !captchaToken) { setError("Complete the security check before requesting an OTP."); return; }
     try {
       const formatted = normaliseIndianPhone(phone);
       setBusy(true);
       const { error: otpError } = await supabase.auth.signInWithOtp({
-        phone: formatted, options: { shouldCreateUser: false, channel: "sms" }
+        phone: formatted, options: { shouldCreateUser: false, channel: "sms", ...(captchaToken ? { captchaToken } : {}) }
       });
       if (otpError) throw otpError;
       setNormalisedPhone(formatted); setStep("otp"); setSeconds(60);
     } catch (reason) { setError(userFacingAuthError(reason)); }
-    finally { setBusy(false); }
+    finally { setBusy(false); setCaptchaToken(null); setCaptchaReset((value) => value + 1); }
   };
 
   const verifyOtp = async () => {
@@ -62,12 +66,14 @@ export default function LoginPage() {
       {error && <Alert tone="warning">{error}</Alert>}
       {step === "phone" ? <>
         <Input label="Indian mobile number" name="phone" type="tel" inputMode="tel" autoComplete="tel" placeholder="+91 98765 43210" required value={phone} onChange={(event) => setPhone(event.target.value)} hint="We send an SMS OTP only. Email OTP and password sign-in are not used."/>
-        <Button type="submit" block size="lg" disabled={busy}><Smartphone size={17}/>{busy ? "Sending…" : "Send mobile OTP"}</Button>
+        <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
+        <Button type="submit" block size="lg" disabled={busy || (captchaRequired && !captchaToken)}><Smartphone size={17}/>{busy ? "Sending…" : "Send mobile OTP"}</Button>
       </> : <>
         <Alert tone="info">Enter the six-digit code sent to <strong>{normalisedPhone}</strong>. It expires after five minutes.</Alert>
         <Input label="6-digit OTP" name="otp" inputMode="numeric" autoComplete="one-time-code" placeholder="000000" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\\D/g, "").slice(0, 6))}/>
         <Button type="submit" block size="lg" disabled={busy || code.length !== 6}><LockKeyhole size={17}/>{busy ? "Verifying…" : "Verify & sign in"}</Button>
-        <Button type="button" variant="ghost" block disabled={busy || seconds > 0} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
+        <AuthCaptcha resetKey={captchaReset} onToken={setCaptchaToken}/>
+        <Button type="button" variant="ghost" block disabled={busy || seconds > 0 || (captchaRequired && !captchaToken)} onClick={() => void requestOtp()}>{seconds > 0 ? `Resend OTP in ${seconds}s` : "Resend OTP"}</Button>
         <Button type="button" variant="link" block onClick={() => { setStep("phone"); setCode(""); setError(""); }}><ArrowLeft size={15}/> Change mobile number</Button>
       </>}
     </form>
