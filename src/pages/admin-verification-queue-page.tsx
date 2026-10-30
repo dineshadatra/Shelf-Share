@@ -15,6 +15,7 @@ type CaseItem = {
   date_of_birth: string | null; account_status: string; masked_phone: string;
   documents: Array<{ id: string; document_type: string; document_last4: string | null; status: string }>;
   file_kinds: Array<{ id: string; file_kind: string }>;
+  audit_history: Array<{ id: number; actor_user_id: string | null; action: string; reason_code: string | null; created_at: string; from_status: string | null; to_status: string | null }>;
 };
 
 export default function AdminVerificationQueuePage() {
@@ -47,14 +48,23 @@ export default function AdminVerificationQueuePage() {
     setError("");
   };
 
-  const assignToMe = async (item: CaseItem) => {
-    if (!supabase || !user) return;
+  const assignReviewer = async (item: CaseItem, assigneeId: string) => {
+    if (!supabase) return;
     setBusyId(item.id); setError("");
     const { error: invokeError } = await supabase.functions.invoke("verification-admin", {
-      body: { action: "assign", case_id: item.id, assignee_id: user.id }
+      body: { action: "assign", case_id: item.id, assignee_id: assigneeId }
     });
     if (invokeError) setError(userFacingAuthError(invokeError));
     await load(); setBusyId("");
+  };
+
+  const assignToMe = (item: CaseItem) => {
+    if (user) void assignReviewer(item, user.id);
+  };
+
+  const assignToOther = (item: CaseItem) => {
+    const assigneeId = window.prompt("Enter the UUID of an active verification reviewer.");
+    if (assigneeId && assigneeId.trim()) void assignReviewer(item, assigneeId.trim());
   };
 
   const decide = async (item: CaseItem, decision: "approve" | "reject" | "request_info" | "suspend") => {
@@ -86,8 +96,14 @@ export default function AdminVerificationQueuePage() {
         })}{item.file_kinds.filter((file) => file.file_kind !== "identity_document").map((file) => <div key={file.id}><strong>{file.file_kind.replaceAll("_"," ")}</strong><Button size="sm" variant="outline" disabled={busyId === item.id} onClick={() => void preview(item,file.id)}><Eye size={14}/> Secure preview</Button></div>)}</div>
         {item.requested_information && <Alert tone="warning">Information requested: {item.requested_information}</Alert>}
         {item.decision_reason && <p className="admin-case-reason">Previous decision: {item.decision_reason}</p>}
+        {item.internal_notes && <p className="admin-case-reason">Internal notes: {item.internal_notes}</p>}
+        {item.audit_history.length > 0 && <details className="admin-audit-history">
+          <summary>Audit history ({item.audit_history.length})</summary>
+          <ol>{item.audit_history.map((entry) => <li key={entry.id}><strong>{entry.action.replaceAll("_"," ")}</strong><span>{new Date(entry.created_at).toLocaleString("en-IN")} · {entry.actor_user_id ?? "System"}</span>{entry.reason_code && <small>{entry.reason_code}</small>}</li>)}</ol>
+        </details>}
         <div className="admin-case-actions">
-          <Button size="sm" variant="outline" disabled={busyId === item.id} onClick={() => void assignToMe(item)}>Assign to me</Button>
+          <Button size="sm" variant="outline" disabled={busyId === item.id} onClick={() => assignToMe(item)}>Assign to me</Button>
+          <Button size="sm" variant="ghost" disabled={busyId === item.id} onClick={() => assignToOther(item)}>Assign reviewer…</Button>
           <Button size="sm" disabled={busyId === item.id} onClick={() => void decide(item,"approve")}>Approve</Button>
           <Button size="sm" variant="outline" disabled={busyId === item.id} onClick={() => void decide(item,"request_info")}>Request information</Button>
           <Button size="sm" variant="danger" disabled={busyId === item.id} onClick={() => void decide(item,"reject")}>Reject</Button>
