@@ -127,6 +127,7 @@ export interface MarketplacePaymentProvider {
 
   createDepositHold(request: ProviderDepositHoldRequest): Promise<ProviderDepositSnapshot>;
   releaseDeposit(depositReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
+  holdDepositForDispute(depositReference: string, disputeReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
   applyDepositClaim(depositReference: string, amountPaise: number, claimReference: string, idempotencyKey: string): Promise<ProviderDepositSnapshot>;
 
   verifyWebhook(rawBody: string, headers: Headers): Promise<VerifiedProviderEvent | null>;
