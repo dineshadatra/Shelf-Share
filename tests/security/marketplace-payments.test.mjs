@@ -260,6 +260,49 @@ test("provider-held deposits require a persistent provider reference before show
   assert.match(depositEvent, /deposit\.claim_held/);
 });
 
+test("requested financial and marketplace failure scenarios have server-side guards", () => {
+  const createBooking = functionBody(booking, "public.request_book_booking(");
+  const paymentEvent = functionBody(booking, "public.apply_verified_payment_event(");
+  const workspaceFn = functionBody(workspace, "public.get_my_booking_workspace(");
+  const refundEvent = functionBody(finance, "public.apply_verified_refund_event(");
+  const payoutEvent = functionBody(finance, "public.apply_verified_payout_event(");
+  const release = functionBody(disputes, "public.request_deposit_release(");
+  const incident = functionBody(booking, "public.report_booking_incident(");
+  const chargeback = functionBody(workspace, "public.apply_verified_chargeback_resolution(");
+
+  // Concurrent requests for one physical copy serialize and the exclusion constraint is the final race guard.
+  assert.match(createBooking, /for update/);
+  assert.match(baseBooking, /exclude using gist \(book_copy_id with =, reserved_period with &&\)/);
+
+  // Failed provider payments release the hold; browser closure is recovered by the participant's server read.
+  assert.match(paymentEvent, /payment\.failed/);
+  assert.match(paymentEvent, /status='released'/);
+  assert.match(workspaceFn, /'payment_status'/);
+  assert.match(api, /my_bookings/);
+  assert.match(rentals, /Refresh server status/);
+
+  // Deposit release locks the row and has a unique in-flight request index.
+  assert.match(release, /for update/);
+  assert.match(release, /provider_reference is null/);
+  assert.match(baseFinance, /deposit_release_one_open_uq/);
+
+  // Failed provider operations remain failed/reconcilable and are never reported as paid/refunded.
+  assert.match(refundEvent, /refund\.failed/);
+  assert.match(refundEvent, /status='failed'/);
+  assert.match(payoutEvent, /transfer\.failed/);
+  assert.match(payoutEvent, /status='failed'/);
+
+  // Chargebacks block settlement and are resolved only by trusted provider events.
+  assert.match(paymentEvent, /payment_disputes/);
+  assert.match(chargeback, /status='reconciliation_required'/);
+  assert.match(chargeback, /p_result not in \('won','lost'\)/);
+
+  // Cross-city and Owner no-show rules are server-side, not frontend filters.
+  assert.match(createBooking, /Cross-city rentals are not permitted/);
+  assert.match(incident, /owner_no_show/);
+  assert.match(incident, /v_user<>v_booking\.reader_id/);
+});
+
 test("every enabled marketplace provider must support idempotent calls", () => {
   assert.match(providerGate, /check \(not enabled_for_rent or supports_idempotency\)/);
   assert.match(adapter, /idempotencyKey/);
