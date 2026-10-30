@@ -138,6 +138,7 @@ export default function ListBookPage() {
         p_pricing:{rental_3d_paise:toPaise(price3),rental_7d_paise:toPaise(price7),rental_15d_paise:toPaise(price15),rental_30d_paise:toPaise(price30),custom_daily_paise:toPaise(customDaily),min_custom_days:minDays||null,max_custom_days:maxDays||null},
         p_listing_details:{existing_damage:damage.trim(),original_price_paise:toPaise(originalPrice),requested_deposit_paise:toPaise(requestedDeposit)??0},
         p_declaration_type:declaration,
+        p_declaration_accepted:accepted,
       });
       if(saveError)throw saveError;
       const id=savedId as string;setCopyId(id);
