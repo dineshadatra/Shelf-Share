@@ -327,6 +327,9 @@ begin
   end if;
 
   if p_action = 'approve' then
+    if not exists (select 1 from public.profiles p where p.id = v_case.user_id and p.account_status = 'active') then
+      raise exception 'Suspended or closed accounts require a separate reinstatement decision';
+    end if;
     update public.identity_documents set status = 'accepted', reviewed_by = v_actor, reviewed_at = now()
       where verification_case_id = p_case_id;
     update public.user_verifications set status = 'verified', identity_verified_at = now(),
