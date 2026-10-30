@@ -36,7 +36,7 @@ create table if not exists public.verification_cases (
   id uuid primary key,
   user_id uuid not null references auth.users(id) on delete restrict,
   status text not null default 'submitted'
-    check (status in ('submitted','under_review','needs_info','resubmission_required','approved','rejected','suspended')),
+    check (status in ('submitted','under_review','needs_info','resubmission_required','resubmitted','approved','rejected','suspended')),
   assigned_reviewer_id uuid references auth.users(id) on delete restrict,
   submitted_at timestamptz not null default now(),
   assigned_at timestamptz,
@@ -159,7 +159,7 @@ begin
     raise exception 'Enter a valid display name';
   end if;
   if p_date_of_birth is null then raise exception 'Date of birth is required'; end if;
-  v_is_eligible := p_date_of_birth <= (current_date - interval '18 years')::date;
+  v_is_eligible := p_date_of_birth <= (((now() at time zone 'Asia/Kolkata')::date - interval '18 years')::date);
   if not v_is_eligible then raise exception 'ShelfShare is available only to people aged 18 or older'; end if;
   if p_profile_photo_object_key is null
     or p_profile_photo_object_key !~ ('^' || v_user_id::text || '/profile/[A-Za-z0-9-]+[.]jpg$')
@@ -199,6 +199,33 @@ end;
 $$;
 revoke all on function public.complete_registration(text,date,text,text,text,text) from public, anon;
 grant execute on function public.complete_registration(text,date,text,text,text,text) to authenticated;
+
+
+-- Sync the verified phone timestamp after Supabase Auth confirms a phone change.
+create or replace function public.sync_verified_phone()
+returns void
+language plpgsql security definer
+set search_path = ''
+as $
+declare
+  v_user_id uuid := auth.uid();
+  v_phone_confirmed_at timestamptz;
+begin
+  if v_user_id is null then raise exception 'Authentication required'; end if;
+  select u.phone_confirmed_at into v_phone_confirmed_at
+  from auth.users u where u.id = v_user_id;
+  if v_phone_confirmed_at is null then raise exception 'The new mobile number is not confirmed'; end if;
+  update public.user_verifications
+    set phone_verified_at = v_phone_confirmed_at, updated_at = now()
+    where user_id = v_user_id;
+  if not found then raise exception 'Complete registration before changing your mobile number'; end if;
+  insert into public.verification_audit(user_id, actor_user_id, action, metadata)
+  values (v_user_id, v_user_id, 'phone_number_changed',
+    jsonb_build_object('phone_verified_at', v_phone_confirmed_at));
+end;
+$;
+revoke all on function public.sync_verified_phone() from public, anon;
+grant execute on function public.sync_verified_phone() to authenticated;
 
 create or replace function public.submit_identity_verification(
   p_case_id uuid,
@@ -243,6 +270,10 @@ begin
   if exists (select 1 from public.verification_cases c where c.user_id = v_user_id and c.status in ('submitted','under_review','needs_info')) then
     raise exception 'An active verification case already exists';
   end if;
+
+  update public.verification_cases
+    set status = 'resubmitted', updated_at = now()
+    where user_id = v_user_id and status = 'resubmission_required';
 
   insert into public.verification_cases(id, user_id, status)
   values (p_case_id, v_user_id, 'submitted');
