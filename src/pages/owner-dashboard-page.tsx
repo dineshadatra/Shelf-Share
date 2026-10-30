@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Edit3, PauseCircle, Plus, RefreshCw } from "lucide-react";
+import { ArrowRight, CalendarDays, CheckCircle2, Clock3, Edit3, PauseCircle, Plus, RefreshCw, Layers3 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MemberLayout } from "@/layouts/member-layout";
 import { PageHeading } from "./page-helpers";
@@ -18,6 +18,7 @@ type Listing = {
   pricing:{rental_3d_paise:number|null;rental_7d_paise:number|null;rental_15d_paise:number|null;rental_30d_paise:number|null}|null;
 };
 type Block={block_id:string;starts_at:string;ends_at:string;reason:string};
+type Bundle={id:string;name:string;description:string|null;status:string;city:string;items:Array<{copy_id:string;title:string;authors:string[]}>};
 const INR=new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2});
 
 export default function OwnerDashboardPage(){
@@ -31,19 +32,28 @@ export default function OwnerDashboardPage(){
   const [until,setUntil]=useState("");
   const [blockReason,setBlockReason]=useState("owner_unavailable");
   const [blocks,setBlocks]=useState<Block[]>([]);
+  const [bundles,setBundles]=useState<Bundle[]>([]);
+  const [bundleName,setBundleName]=useState("");
+  const [bundleDescription,setBundleDescription]=useState("");
+  const [bundleCopyIds,setBundleCopyIds]=useState<string[]>([]);
   const [blockLoading,setBlockLoading]=useState(false);
   const verified=verification?.status==="verified"&&verification.age_eligible===true;
 
   const load=useCallback(async()=>{
     if(!supabase){setLoading(false);return;}
     setLoading(true);setError("");
-    const {data,error:invokeError}=await supabase.functions.invoke("catalogue-api",{body:{action:"owner_listings"}});
-    if(invokeError)setError(invokeError.message);
+    const [listingResponse,bundleResponse]=await Promise.all([
+      supabase.functions.invoke("catalogue-api",{body:{action:"owner_listings"}}),
+      supabase.functions.invoke("catalogue-api",{body:{action:"owner_bundles"}}),
+    ]);
+    if(listingResponse.error)setError(listingResponse.error.message);
     else {
-      const rows=(data?.listings??[]) as Listing[];
+      const rows=(listingResponse.data?.listings??[]) as Listing[];
       setListings(rows);
       if(!selected&&rows[0])setSelected(rows[0].id);
     }
+    if(bundleResponse.error)setError(bundleResponse.error.message);
+    else setBundles((bundleResponse.data?.bundles??[]) as Bundle[]);
     setLoading(false);
   },[selected]);
   useEffect(()=>{void load();},[load]);
@@ -81,6 +91,20 @@ export default function OwnerDashboardPage(){
     setBusy(item.id);setError("");
     const {error:rpcError}=await supabase.rpc("pause_my_book_listing",{p_book_copy_id:item.id});
     if(rpcError)setError(rpcError.message);else await load();
+    setBusy("");
+  };
+  const toggleBundleCopy=(id:string)=>{
+    setBundleCopyIds(old=>old.includes(id)?old.filter(x=>x!==id):old.length>=5?old:[...old,id]);
+  };
+  const createBundle=async()=>{
+    if(!supabase)return;
+    if(bundleName.trim().length<3||bundleCopyIds.length<2||bundleCopyIds.length>5){setError("Choose a name and two to five approved copies.");return;}
+    const chosen=listings.filter(item=>bundleCopyIds.includes(item.id));
+    if(chosen.length!==bundleCopyIds.length||chosen.some(item=>item.listing_status!=="approved"||!item.is_available_for_rent)||new Set(chosen.map(item=>item.city)).size!==1){setError("All bundle copies must be approved, available and in the same city.");return;}
+    setBusy("bundle");setError("");
+    const {error:rpcError}=await supabase.rpc("create_book_bundle",{p_name:bundleName.trim(),p_description:bundleDescription.trim(),p_book_copy_ids:bundleCopyIds});
+    if(rpcError)setError(rpcError.message);
+    else{setBundleName("");setBundleDescription("");setBundleCopyIds([]);await load();}
     setBusy("");
   };
   const statusTone=(status:string)=>status==="approved"?"green":status==="rejected"||status==="removed"?"rose":status==="pending_review"?"amber":"neutral";
@@ -121,6 +145,16 @@ export default function OwnerDashboardPage(){
       </>:<Alert tone="info">Availability blocks can be managed when this listing is approved or under review.</Alert>}
       <div className="availability-block-list"><h3>Upcoming blocks</h3>{blockLoading?<p>Loading calendar…</p>:blocks.length===0?<p>No upcoming owner blocks.</p>:blocks.map(block=><div key={block.block_id}><span><strong>{new Date(block.starts_at).toLocaleDateString("en-IN")} – {new Date(block.ends_at).toLocaleDateString("en-IN")}</strong><small>{block.reason.replaceAll("_"," ")}</small></span><Button size="sm" variant="ghost" disabled={busy===block.block_id} onClick={()=>void removeBlock(block.block_id)}>Remove</Button></div>)}</div>
     </section>}
+    <section className="owner-bundle-section surface">
+      <div className="availability-manager-heading"><div><span className="eyebrow">CURATED SHELF</span><h2>Build a book bundle</h2><p>Group two to five approved, available copies you own in the same city. Bundles are reviewed separately before appearing in discovery.</p></div><Layers3 size={22}/></div>
+      <div className="bundle-create-fields">
+        <Input label="Bundle name" name="bundle-name" value={bundleName} onChange={e=>setBundleName(e.target.value)} placeholder="e.g. Weekend fiction set"/>
+        <label className="ss-field"><span className="ss-label">Description</span><textarea className="ss-input" rows={2} maxLength={1000} value={bundleDescription} onChange={e=>setBundleDescription(e.target.value)}/></label>
+      </div>
+      <div className="bundle-copy-picker"><strong>Select 2–5 available copies</strong>{listings.filter(item=>item.listing_status==="approved"&&item.is_available_for_rent).length===0?<p>Approve and activate at least two listings first.</p>:listings.filter(item=>item.listing_status==="approved"&&item.is_available_for_rent).map(item=><label key={item.id}><input type="checkbox" checked={bundleCopyIds.includes(item.id)} disabled={!bundleCopyIds.includes(item.id)&&bundleCopyIds.length>=5} onChange={()=>toggleBundleCopy(item.id)}/><span>{item.title}<small>{item.city} · {item.locality}</small></span></label>)}</div>
+      <Button disabled={busy==="bundle"||bundleCopyIds.length<2||bundleCopyIds.length>5} onClick={()=>void createBundle()}><Plus size={15}/>{busy==="bundle"?"Submitting…":"Submit bundle for review"}</Button>
+      {bundles.length>0&&<div className="owner-bundle-list"><h3>Your bundles</h3>{bundles.map(bundle=><div key={bundle.id}><span><strong>{bundle.name}</strong><small>{bundle.city} · {bundle.items.length} books</small></span><Badge tone={statusTone(bundle.status==="pending_review"?"pending_review":bundle.status)}>{bundle.status.replaceAll("_"," ")}</Badge></div>)}</div>}
+    </section>
     <div className="owner-workspace-note"><CalendarDays size={16}/><span>Public availability is calculated against owner blocks and confirmed reservations on the server. A browser calendar is not the final booking lock.</span></div>
   </MemberLayout>;
 }
