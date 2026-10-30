@@ -1,0 +1,51 @@
+{
+  "name": "shelfshare-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": { "node": "^20.19.0 || >=22.12.0" },
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc -b",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint .",
+    "test:security": "node --test tests/security/*.test.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
+    "@marsidev/react-turnstile": "^1.6.3",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-slot": "^1.2.3",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@supabase/supabase-js": "^2.118.0",
+    "@tanstack/react-query": "^5.90.5",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.545.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-hook-form": "^7.65.0",
+    "react-router-dom": "^7.18.5",
+    "sonner": "^2.0.7",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^24.7.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^6.1.2",
+    "eslint": "^10.13.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.4.23",
+    "globals": "^16.4.0",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.72.1",
+    "vite": "^8.3.5"
+  }
+}

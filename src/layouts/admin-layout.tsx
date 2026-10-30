@@ -1,0 +1,1 @@
+import type {ReactNode} from "react"; import {AppShell} from "@/components/layouts/app-shell"; export function AdminLayout({children}:{children:ReactNode}){return <AppShell mode="admin" title="Admin console">{children}</AppShell>;}

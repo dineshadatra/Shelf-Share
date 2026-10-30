@@ -1,0 +1,45 @@
+name: ShelfShare frontend and security checks
+
+on:
+  push:
+    branches:
+      - feat/frontend-foundation
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "supabase/**"
+      - "tests/**"
+      - "docs/AUTHENTICATION_AND_VERIFICATION.md"
+      - "docs/BOOK_CATALOGUE_AND_LISTINGS.md"
+      - "docs/DESIGN_SYSTEM.md"
+      - "docs/ROUTES.md"
+      - "package.json"
+      - "tsconfig*.json"
+      - "vite.config.ts"
+      - "postcss.config.js"
+      - ".github/workflows/frontend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  frontend-and-security:
+    name: TypeScript, build, lint and security regression tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Security regression tests
+        run: npm run test:security
+      - name: TypeScript check and production build
+        run: npm run build
+      - name: Lint
+        run: npm run lint

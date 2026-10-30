@@ -1,0 +1,1 @@
+import type {ReactNode} from "react"; import {BookOpen} from "lucide-react"; export function EmptyState({title,description,action,icon}:{title:string;description:string;action?:ReactNode;icon?:ReactNode}){return <div className="ss-empty">{icon??<BookOpen size={28}/>}<h3>{title}</h3><p>{description}</p>{action}</div>;}
