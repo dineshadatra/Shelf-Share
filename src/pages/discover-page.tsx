@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, Compass, Heart, ListFilter, LocateFixed, Map, MapPin, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { PublicLayout } from "@/layouts/public-layout";
 import { Button } from "@/components/ui/button";
@@ -170,7 +170,7 @@ export default function DiscoverPage() {
   };
   const toggleWishlist=async(item:Listing)=>{
     if(!supabase)return;
-    if(!user){window.location.href="/login?next=%2Fdiscover";return;}
+    if(!user){navigate("/login?next=%2Fdiscover");return;}
     setSavingId(item.id);
     const {data:added,error:rpcError}=await supabase.rpc("toggle_book_wishlist",{p_book_title_id:item.book_title_id});
     if(rpcError)setError(rpcError.message);
