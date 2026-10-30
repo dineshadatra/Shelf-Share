@@ -219,13 +219,20 @@ Deno.serve(async (req) => {
     const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
     const signed = await Promise.all(rows.map(async (row) => {
       const images = Array.isArray(row.images) ? row.images as Record<string, unknown>[] : [];
-      const signedImages = await Promise.all(images.slice(0, 5).map(async (item) => {
-        const key = typeof item.object_key === "string" ? item.object_key : "";
-        if (!key) return null;
-        const { data: signedData } = await service.storage.from("book-listing-public").createSignedUrl(key, 300);
-        return signedData?.signedUrl ? { ...item, url: signedData.signedUrl } : null;
-      }));
-      return { ...row, images: signedImages.filter(Boolean) };
+      const [signedImages, historyResult] = await Promise.all([
+        Promise.all(images.slice(0, 5).map(async (item) => {
+          const key = typeof item.object_key === "string" ? item.object_key : "";
+          if (!key) return null;
+          const { data: signedData } = await service.storage.from("book-listing-public").createSignedUrl(key, 300);
+          return signedData?.signedUrl ? { id: item.id, is_cover: item.is_cover, moderation_status: item.moderation_status, url: signedData.signedUrl } : null;
+        })),
+        service.from("book_listing_moderation_events")
+          .select("action,from_status,to_status,reason,created_at")
+          .eq("book_copy_id", row.id)
+          .not("reason", "is", null)
+          .order("created_at", { ascending: false }).limit(10),
+      ]);
+      return { ...row, images: signedImages.filter(Boolean), moderation_history: historyResult.data ?? [] };
     }));
     return reply(200, { listings: signed });
   }
@@ -242,7 +249,15 @@ Deno.serve(async (req) => {
   if (action === "owner_bundles") {
     const { data, error } = await userClient.rpc("get_my_book_bundles");
     if (error) return reply(400, { error: error.message });
-    return reply(200, { bundles: data ?? [] });
+    const rows = Array.isArray(data) ? data as Record<string, unknown>[] : [];
+    const bundles = await Promise.all(rows.map(async (bundle) => {
+      const { data: history } = await service.from("book_bundle_moderation_events")
+        .select("action,from_status,to_status,reason,created_at")
+        .eq("bundle_id", bundle.id)
+        .order("created_at", { ascending: false }).limit(10);
+      return { ...bundle, moderation_history: history ?? [] };
+    }));
+    return reply(200, { bundles });
   }
 
   const { data: roles, error: roleError } = await service.from("user_roles")
