@@ -183,7 +183,7 @@ test("public bundles disappear when one included physical copy is unavailable", 
 });
 
 test("public book detail is readable before the authenticated Edge API branch", () => {
-  assert.ok(api.indexOf('action === "listing_detail"') < api.indexOf("getAuthenticatedUser(req)"));
+  assert.ok(api.indexOf('action === "listing_detail"') < api.indexOf("const auth = await getAuthenticatedUser(req)"));
 });
 
 test("ISBN search accepts ISBN-10 by normalizing it before discovery RPC", () => {
@@ -209,7 +209,7 @@ test("bundle approval revalidates every included copy and verified owner", () =>
   assert.match(bundleApprovalSql, /bc\.listing_status='approved'/);
   assert.match(bundleApprovalSql, /bc\.is_available_for_rent/);
   assert.match(bundleApprovalSql, /v\.status='verified'/);
-  assert.match(bundleApprovalSql, /v_age_eligible/);
+  assert.match(bundleApprovalSql, /v\.age_eligible is true/);
 });
 
 test("owners see public decision reasons but never internal reviewer notes", () => {
