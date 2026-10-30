@@ -1,5 +1,11 @@
 begin;
 
+alter table public.outbox_events
+  add column if not exists dead_letter_at timestamptz;
+create index if not exists outbox_events_dead_letter_pending_idx
+  on public.outbox_events(dead_letter_at,available_at)
+  where published_at is null and dead_letter_at is null;
+
 create or replace function public.claim_marketplace_outbox_events(
   p_limit integer default 20,p_lease_seconds integer default 60
 ) returns table(
@@ -16,7 +22,7 @@ begin
   return query
   with candidates as (
     select o.id from public.outbox_events o
-      where o.published_at is null and o.available_at<=now()
+      where o.published_at is null and o.dead_letter_at is null and o.attempts<20 and o.available_at<=now()
       order by o.available_at,o.created_at
       for update skip locked limit p_limit
   ), claimed as (
@@ -46,10 +52,16 @@ begin
   if p_succeeded then
     update public.outbox_events set published_at=now(),last_error_code=null where id=p_event_id;
   else
-    v_delay:=least(3600,greatest(15,(power(2,least(v_event.attempts,11))::integer)*5));
-    update public.outbox_events set available_at=now()+make_interval(secs=>v_delay),
-      last_error_code=left(coalesce(p_error_code,'provider_operation_failed'),120)
-      where id=p_event_id;
+    if v_event.attempts>=20 then
+      update public.outbox_events set dead_letter_at=now(),
+        last_error_code=left(coalesce(p_error_code,'provider_operation_failed'),120)
+        where id=p_event_id;
+    else
+      v_delay:=least(3600,greatest(15,(power(2,least(v_event.attempts,11))::integer)*5));
+      update public.outbox_events set available_at=now()+make_interval(secs=>v_delay),
+        last_error_code=left(coalesce(p_error_code,'provider_operation_failed'),120)
+        where id=p_event_id;
+    end if;
   end if;
 end;
 $$;
