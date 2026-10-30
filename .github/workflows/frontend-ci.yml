@@ -1,0 +1,39 @@
+name: ShelfShare frontend build
+
+on:
+  push:
+    branches:
+      - feat/frontend-foundation
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "docs/DESIGN_SYSTEM.md"
+      - "docs/ROUTES.md"
+      - "package.json"
+      - "tsconfig*.json"
+      - "vite.config.ts"
+      - "postcss.config.js"
+      - ".github/workflows/frontend-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  production-build:
+    name: TypeScript check and Vite production build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build
+        run: npm run build
+      - name: Lint
+        run: npm run lint
