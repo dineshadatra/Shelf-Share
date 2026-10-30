@@ -638,6 +638,22 @@ Deno.serve(async (req) => {
         message: "Dispute opened. Any permitted provider deposit hold will be confirmed separately by a signed provider event." });
     }
 
+    if (action === "resolve_dispute") {
+      const allowed = await hasRole(service, user.id, ["finance_operator", "admin", "super_admin"]);
+      if (!allowed) return reply(403, { error: "Independent dispute reviewer permission required" });
+      const disputeId = text(payload.dispute_id, 64);
+      const decisionCode = text(payload.decision_code, 80);
+      const decisionNotes = text(payload.decision_notes, 4000);
+      if (!disputeId || !decisionCode || !decisionNotes || decisionNotes.length < 20) {
+        return reply(400, { error: "Dispute decision code and reasoned notes are required" });
+      }
+      const { error } = await userClient.rpc("resolve_booking_dispute", {
+        p_dispute_id: disputeId, p_decision_code: decisionCode, p_decision_notes: decisionNotes,
+      });
+      if (error) return reply(400, { error: error.message });
+      return reply(200, { resolved: true, provider_deposit_release_still_pending: true });
+    }
+
     if (action === "report_incident") {
       const bookingId = text(payload.booking_id, 64);
       const incidentType = text(payload.incident_type, 40);
