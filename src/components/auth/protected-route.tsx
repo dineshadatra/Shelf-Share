@@ -34,13 +34,15 @@ export function ProtectedRoute({ children, staffOnly = false, moderationOnly = f
 
   useEffect(() => {
     let active = true;
-    if (!staffOnly || !user || !supabase) {
+    if ((!staffOnly && !moderationOnly) || !user || !supabase) {
       setCheckingStaff(false);
-      if (staffOnly && !user) setStaffAllowed(false);
+      if ((staffOnly || moderationOnly) && !user) setStaffAllowed(false);
       return;
     }
     setCheckingStaff(true);
-    supabase.functions.invoke("verification-admin", { body: { action: "me" } })
+    const endpoint = moderationOnly ? "catalogue-api" : "verification-admin";
+    const action = moderationOnly ? "moderator_me" : "me";
+    supabase.functions.invoke(endpoint, { body: { action } })
       .then(({ data, error }) => {
         if (!active) return;
         setStaffAllowed(!error && data?.authorized === true);
