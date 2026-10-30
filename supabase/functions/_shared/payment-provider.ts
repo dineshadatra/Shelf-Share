@@ -112,6 +112,11 @@ export type ProviderReconciliationRecord = {
   occurredAt: string | null;
 };
 
+/**
+ * Every method carrying an idempotencyKey must return the same provider-side
+ * operation for repeated identical requests. Adapters must reject reuse of a
+ * key with a different amount, currency, vendor, booking or operation type.
+ */
 export interface MarketplacePaymentProvider {
   readonly providerCode: string;
   readonly productCode: string;
