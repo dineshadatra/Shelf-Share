@@ -25,6 +25,9 @@ refresh_token_reuse_interval = 10
 enable_signup = true
 enable_anonymous_sign_ins = false
 
+[auth.email]
+enable_signup = false
+
 [auth.sessions]
 timebox = "30d"
 inactivity_timeout = "24h"
