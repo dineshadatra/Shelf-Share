@@ -332,7 +332,7 @@ Deno.serve(async (req) => {
         service.from("book_pricing").select("rental_3d_paise,rental_7d_paise,rental_15d_paise,rental_30d_paise,custom_daily_paise").eq("book_copy_id", copy.id).is("effective_until", null).maybeSingle(),
         service.from("localities").select("name").eq("id", copy.locality_id).maybeSingle(),
         service.from("user_verifications").select("status,age_eligible").eq("user_id", copy.owner_id).maybeSingle(),
-        service.from("book_listing_moderation_events").select("id,actor_user_id,action,from_status,to_status,reason,created_at").eq("book_copy_id", copy.id).order("created_at", { ascending: false }).limit(50),
+        service.from("book_listing_moderation_events").select("id,actor_user_id,action,from_status,to_status,reason,internal_notes,created_at").eq("book_copy_id", copy.id).order("created_at", { ascending: false }).limit(50),
       ]);
       const imageRows = (images.data ?? []).map((image) => ({
         id: image.id, alt_text: image.alt_text, moderation_status: image.moderation_status, is_cover: image.is_cover,
