@@ -41,11 +41,21 @@ export default function AdminVerificationQueuePage() {
     if (!supabase) return;
     const purpose = window.prompt("Why are you opening this private file? This reason is audited.", "Manual identity review");
     if (!purpose || purpose.trim().length < 5) return;
+    const previewWindow = window.open("about:blank", "_blank");
+    if (!previewWindow) {
+      setError("Your browser blocked the secure preview window. Allow pop-ups for ShelfShare and retry.");
+      return;
+    }
+    previewWindow.opener = null;
     const { data, error: invokeError } = await supabase.functions.invoke("verification-admin", {
       body: { action: "preview", case_id: item.id, file_id: fileId, purpose }
     });
-    if (invokeError || !data?.signed_url) { setError(userFacingAuthError(invokeError ?? new Error("Preview unavailable"))); return; }
-    window.open(data.signed_url, "_blank", "noopener,noreferrer");
+    if (invokeError || !data?.signed_url) {
+      previewWindow.close();
+      setError(userFacingAuthError(invokeError ?? new Error("Preview unavailable")));
+      return;
+    }
+    previewWindow.location.href = data.signed_url;
     setError("");
   };
 
