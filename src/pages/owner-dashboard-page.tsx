@@ -16,9 +16,10 @@ type Listing = {
   title:string; authors:string[]; city:string; locality:string;
   images:Array<{url?:string;is_cover?:boolean;moderation_status?:string}>;
   pricing:{rental_3d_paise:number|null;rental_7d_paise:number|null;rental_15d_paise:number|null;rental_30d_paise:number|null}|null;
+  moderation_history?:Array<{action:string;to_status:string;reason:string|null;created_at:string}>;
 };
 type Block={block_id:string;starts_at:string;ends_at:string;reason:string};
-type Bundle={id:string;name:string;description:string|null;status:string;city:string;items:Array<{copy_id:string;title:string;authors:string[]}>};
+type Bundle={id:string;name:string;description:string|null;status:string;city:string;items:Array<{copy_id:string;title:string;authors:string[]}>;moderation_history?:Array<{action:string;to_status:string;reason:string|null;created_at:string}>};
 const INR=new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2});
 
 export default function OwnerDashboardPage(){
@@ -127,6 +128,7 @@ export default function OwnerDashboardPage(){
           <div className="owner-listing-info"><div className="owner-listing-title"><div><h3>{item.title}</h3><p>{item.authors?.join(", ")}</p></div><Badge tone={statusTone(item.listing_status)}>{item.listing_status.replaceAll("_"," ")}</Badge></div>
             <p className="owner-listing-meta">{item.city} · {item.locality} · {item.condition.replaceAll("_"," ")}</p>
             <div className="owner-listing-prices">{item.pricing?.rental_3d_paise!=null&&<span>3 days {INR.format(item.pricing.rental_3d_paise/100)}</span>}{item.pricing?.rental_7d_paise!=null&&<span>7 days {INR.format(item.pricing.rental_7d_paise/100)}</span>}</div>
+            {item.moderation_history?.[0]?.reason&&<div className="owner-moderation-reason"><strong>Latest review · {new Date(item.moderation_history[0].created_at).toLocaleString("en-IN")}</strong><span>{item.moderation_history[0].reason}</span></div>}
             <div className="owner-listing-actions">
               {["draft","rejected","paused"].includes(item.listing_status)&&<Button size="sm" variant="outline" asChild><Link to={"/owner/list-book?id="+item.id}><Edit3 size={14}/> Edit & resubmit</Link></Button>}
               {item.listing_status==="approved"&&<Button size="sm" variant="outline" disabled={busy===item.id} onClick={()=>void pause(item)}><PauseCircle size={14}/> Pause listing</Button>}
@@ -153,7 +155,7 @@ export default function OwnerDashboardPage(){
       </div>
       <div className="bundle-copy-picker"><strong>Select 2–5 available copies</strong>{listings.filter(item=>item.listing_status==="approved"&&item.is_available_for_rent).length===0?<p>Approve and activate at least two listings first.</p>:listings.filter(item=>item.listing_status==="approved"&&item.is_available_for_rent).map(item=><label key={item.id}><input type="checkbox" checked={bundleCopyIds.includes(item.id)} disabled={!bundleCopyIds.includes(item.id)&&bundleCopyIds.length>=5} onChange={()=>toggleBundleCopy(item.id)}/><span>{item.title}<small>{item.city} · {item.locality}</small></span></label>)}</div>
       <Button disabled={busy==="bundle"||bundleCopyIds.length<2||bundleCopyIds.length>5} onClick={()=>void createBundle()}><Plus size={15}/>{busy==="bundle"?"Submitting…":"Submit bundle for review"}</Button>
-      {bundles.length>0&&<div className="owner-bundle-list"><h3>Your bundles</h3>{bundles.map(bundle=><div key={bundle.id}><span><strong>{bundle.name}</strong><small>{bundle.city} · {bundle.items.length} books</small></span><Badge tone={statusTone(bundle.status==="pending_review"?"pending_review":bundle.status)}>{bundle.status.replaceAll("_"," ")}</Badge></div>)}</div>}
+      {bundles.length>0&&<div className="owner-bundle-list"><h3>Your bundles</h3>{bundles.map(bundle=><div key={bundle.id}><span><strong>{bundle.name}</strong><small>{bundle.city} · {bundle.items.length} books</small></span><div className="owner-bundle-status"><Badge tone={statusTone(bundle.status==="pending_review"?"pending_review":bundle.status)}>{bundle.status.replaceAll("_"," ")}</Badge>{bundle.moderation_history?.[0]?.reason&&<small>{bundle.moderation_history[0].reason}</small>}</div></div>)}</div>}
     </section>
     <div className="owner-workspace-note"><CalendarDays size={16}/><span>Public availability is calculated against owner blocks and confirmed reservations on the server. A browser calendar is not the final booking lock.</span></div>
   </MemberLayout>;
