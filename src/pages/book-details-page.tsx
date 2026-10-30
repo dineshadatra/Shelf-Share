@@ -172,7 +172,7 @@ export default function BookDetailsPage(){
         <div className="detail-price-panel">
           <label className="ss-field"><span className="ss-label">Rental duration</span><select className="ss-input" value={duration} onChange={e=>setDuration(Number(e.target.value))}><option value={3}>3 days</option><option value={7}>7 days</option><option value={15}>15 days</option><option value={30}>30 days</option></select></label>
           <strong>{price!=null?INR.format(price/100):"Price not configured"}</strong>
-          <span>Rental fee · 10% platform commission is included in the checkout breakdown</span>
+          <span>Rental fee · 10% commission is withheld from Owner proceeds, not charged as an extra Reader fee</span>
         </div>
         <section className="detail-availability">
           <h3><CalendarDays size={17}/> Request this copy</h3>
