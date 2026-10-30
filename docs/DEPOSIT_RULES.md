@@ -1,6 +1,6 @@
 # Deposit Rules — ShelfShare
 
-**Status: BLOCKED pending legal and payment-provider approval.**
+**Status: BLOCKED pending written legal, provider and accounting approval.** The application stores only workflow references and provider-confirmed events; a database row or displayed locked amount does not prove custody.
 The Project Master Context requires a security deposit separate from rental fee and commission, and says deposits remain subject to approved payment-provider arrangements until rental closure. It expressly prohibits informal escrow or a fictional wallet.
 
 ## 1. Non-negotiable safeguards
@@ -9,7 +9,7 @@ The Project Master Context requires a security deposit separate from rental fee 
 - Deposit is not available for withdrawal by Owner.
 - Deposit is not represented as “escrow” unless the exact custody structure is legally valid and provider-approved.
 - ShelfShare must not hold/pool deposit funds in its ordinary operating account or create an unregulated stored-value wallet.
-- A database balance is a record, not proof that money is held.
+- A database balance is a record, not proof that money is held. The member-facing deposit position is booking-scoped and derives from provider-confirmed ledger events.
 - No automatic confiscation or arbitrary deduction.
 - No deposit feature in production until signed legal opinion and written PA/bank approval identify who holds the funds, under what account/product, for whose benefit, and how release/application works.
 
