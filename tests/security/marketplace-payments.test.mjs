@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
+  read("../../supabase/migrations/202610300004_finance_ledger.sql"),
+  read("../../supabase/migrations/202610300003_booking_handover.sql"),
   read("../../supabase/migrations/202610300021_financial_events_deposit_claims_reconciliation.sql"),
   read("../../supabase/migrations/202610300023_booking_payments_handover_core.sql"),
   read("../../supabase/migrations/202610300024_rental_disputes_and_provider_deposit_holds.sql"),
@@ -129,7 +131,8 @@ test("refund and payout terminal success states require verified provider events
 });
 
 test("deposit is a per-booking provider-backed ledger, not an account wallet", () => {
-  assert.match(finance, /create table if not exists public\.deposits/);
+  assert.match(baseFinance, /create table public\.deposits/);
+  assert.match(baseFinance, /create table public\.deposit_ledger/);
   assert.match(finance, /create table if not exists public\.deposit_claims/);
   assert.match(finance, /get_my_deposit_positions/);
   assert.match(finance, /feature_enabled_at_creation/);
@@ -144,7 +147,9 @@ test("deposit release is blocked by claim window, active rentals and open disput
   assert.match(fn, /completed_at/);
   assert.match(fn, /status<>'closed'/);
   assert.match(fn, /active rental/);
-  assert.match(fn, /provider_reference/);
+  assert.match(fn, /provider_code=v_deposit\.provider/);
+  assert.match(fn, /supports_deposit_release/);
+  assert.match(worker, /deposit\.provider_reference/);
   assert.match(disputes, /v_deposit\.status not in \('held_by_provider','partially_applied','claim_hold'\)/);
 });
 
@@ -187,7 +192,7 @@ test("QR handover is single-use, expiry-bound, participant-separated and OTP rat
 
 test("private condition photographs are scoped to the booking participant", () => {
   const photo = functionBody(booking, "public.register_handover_condition_photo(");
-  assert.match(photo, /rental-evidence-private/);
+  assert.match(baseBooking, /storage_bucket text not null default 'rental-evidence-private'/);
   assert.match(photo, /p_actor_id::text/);
   assert.match(photo, /booking_id::text/);
   assert.match(photo, /handover_session_id/);
@@ -198,7 +203,7 @@ test("private condition photographs are scoped to the booking participant", () =
 test("returns are reader-initiated and must complete via two-party handover", () => {
   const fn = functionBody(outbox, "public.request_book_return(");
   assert.match(fn, /v_booking\.reader_id<>v_actor/);
-  assert.match(rentals, /action:"request_return"/);
+  assert.match(rentals, /invoke\("request_return"/);
   assert.match(rentals, /handover_type.*"return"/);
   assert.match(rentals, /Upload.*return condition/i);
 });
@@ -220,7 +225,7 @@ test("browser booking page submits a request only and never treats availability 
   assert.match(bookDetails, /action:"request_booking"/);
   assert.match(bookDetails, /payment_started: false|payment has been started/i);
   assert.match(bookDetails, /approved public handover point/i);
-  assert.match(bookDetails, /Date checks are advisory/);
+  assert.match(bookDetails, /This check does not reserve the copy/);
 });
 
 test("frontend renders local QR and supports camera scanner with OTP fallback", () => {
