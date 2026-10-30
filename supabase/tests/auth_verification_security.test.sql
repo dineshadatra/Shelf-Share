@@ -39,7 +39,7 @@ select ok(
   'authenticated clients cannot inspect document access logs'
 );
 select ok(
-  (select prosecdef from pg_proc where oid = 'public.review_verification_case(uuid,text,text,text,uuid)'::regprocedure),
+  (select prosecdef from pg_proc where oid = 'public.review_verification_case(uuid,text,text,text,uuid,boolean)'::regprocedure),
   'verification decision RPC runs as security definer and applies explicit role checks'
 );
 
