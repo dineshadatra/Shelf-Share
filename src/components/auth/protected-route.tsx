@@ -27,8 +27,13 @@ export function ProtectedRoute({ children, staffOnly = false, moderationOnly = f
         if (!active) return;
         setProfileExists(!error && Boolean(data?.id));
         setAccountStatus(!error && data?.account_status ? data.account_status : null);
-      })
-      .finally(() => { if (active) setCheckingProfile(false); });
+        setCheckingProfile(false);
+      }, () => {
+        if (!active) return;
+        setProfileExists(false);
+        setAccountStatus(null);
+        setCheckingProfile(false);
+      });
     return () => { active = false; };
   }, [user?.id]);
 
