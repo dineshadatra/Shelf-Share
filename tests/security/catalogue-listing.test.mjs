@@ -219,3 +219,12 @@ test("owners see public decision reasons but never internal reviewer notes", () 
   assert.match(ownerUi, /Latest review/);
   assert.doesNotMatch(api, /moderation_history.*internal_notes/);
 });
+
+test("moderator queue includes internal notes while owner response excludes them", () => {
+  assert.match(api, /reason,internal_notes,created_at/);
+  assert.match(api, /select\("action,from_status,to_status,reason,created_at"\)/);
+  assert.match(adminUi, /internal_notes:string\|null/);
+  assert.match(adminUi, /Internal note:/);
+  assert.match(ownerUi, /Latest review/);
+  assert.doesNotMatch(ownerUi, /internal_notes/);
+});
