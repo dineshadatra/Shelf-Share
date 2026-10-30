@@ -74,9 +74,13 @@ export default function AdminVerificationQueuePage() {
     const reason = window.prompt(prompts[decision], "");
     if (reason === null || (decision !== "approve" && reason.trim().length < 5)) return;
     const notes = window.prompt("Internal reviewer notes (optional)", "") ?? "";
+    const hasAddressEvidence = item.file_kinds.some((file) => file.file_kind === "address_evidence");
+    const addressVerified = decision === "approve" && hasAddressEvidence
+      ? window.confirm("Confirm that the submitted address evidence has been reviewed and accepted.")
+      : false;
     setBusyId(item.id); setError("");
     const { error: invokeError } = await supabase.functions.invoke("verification-admin", {
-      body: { action: "decision", case_id: item.id, decision, reason: reason || "Approved after manual review", internal_notes: notes }
+      body: { action: "decision", case_id: item.id, decision, reason: reason || "Approved after manual review", internal_notes: notes, address_verified: addressVerified }
     });
     if (invokeError) setError(userFacingAuthError(invokeError));
     await load(); setBusyId("");
