@@ -47,6 +47,9 @@ begin
       'handover_location_id',b.requested_handover_location_id,'handover_location',h.name,
       'payment_status',(select p.status from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
       'payment_amount_paise',(select p.amount_paise from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1),
+      'checkout_url',case when b.reader_id=v_user then
+        (select p.provider_checkout_url from public.payments p where p.booking_id=b.id order by p.created_at desc limit 1)
+        else null end,
       'owner_agreement_accepted',exists(
         select 1 from public.rental_agreements ra join public.legal_documents ld on ld.id=ra.legal_document_id
         where ra.booking_id=b.id and ra.user_id=b.owner_id and ra.document_version=ld.version
