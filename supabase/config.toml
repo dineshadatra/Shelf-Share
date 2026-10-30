@@ -25,10 +25,14 @@ refresh_token_reuse_interval = 10
 enable_signup = true
 enable_anonymous_sign_ins = false
 
+[auth.sessions]
+timebox = "30d"
+inactivity_timeout = "24h"
+
 [auth.rate_limit]
-sms_sent = 30
-sign_in_sign_ups = 30
-token_verifications = 30
+sms_sent = 15
+sign_in_sign_ups = 20
+token_verifications = 10
 token_refresh = 150
 
 [auth.sms]
