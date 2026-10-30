@@ -394,6 +394,8 @@ begin
         or exists(select 1 from public.copy_reservations r where r.book_copy_id=v_item.book_copy_id and r.id<>v_reservation.id
           and r.status in ('hold','confirmed','in_use') and r.reserved_period&&v_item.reserved_period
           and (r.status<>'hold' or r.expires_at is null or r.expires_at>now()))
+        or (v_booking.deposit_required_paise>0 and not exists(select 1 from public.deposits d
+          where d.booking_id=v_booking.id and d.feature_enabled_at_creation and d.status='held_by_provider'))
       ) into v_conflict;
       if v_conflict then
         update public.payments set status='reconciliation_required',provider_status='captured_inventory_conflict',
