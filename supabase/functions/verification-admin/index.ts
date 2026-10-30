@@ -75,6 +75,14 @@ Deno.serve(async (req) => {
           .order("created_at", { ascending: false })
           .limit(500)
       : { data: [] };
+    const caseIds = (cases ?? []).map((item) => item.id);
+    const { data: documentAccessRows } = caseIds.length
+      ? await service.from("verification_document_access_audit")
+          .select("id,verification_case_id,document_id,actor_user_id,accessed_at,purpose")
+          .in("verification_case_id", caseIds)
+          .order("accessed_at", { ascending: false })
+          .limit(500)
+      : { data: [] };
     const enriched = await Promise.all((cases ?? []).map(async (item) => {
       const { data: authUser } = await service.auth.admin.getUserById(item.user_id);
       const phone = authUser.user?.phone ?? "";
@@ -96,7 +104,8 @@ Deno.serve(async (req) => {
         file_kinds: fileKinds.data ?? [],
         audit_history: (auditRows ?? [])
           .filter((entry) => (entry.metadata as Record<string, unknown> | null)?.case_id === item.id || entry.action === "registration_completed")
-          .filter((entry) => entry.user_id === item.user_id)
+          .filter((entry) => entry.user_id === item.user_id),
+        document_access_history: (documentAccessRows ?? []).filter((entry) => entry.verification_case_id === item.id)
       };
     }));
     return reply(200, { cases: enriched });
