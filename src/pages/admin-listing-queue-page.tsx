@@ -14,7 +14,7 @@ type AdminListing={
   details:{existing_damage:string;original_price_paise:number|null;original_price_evidence_note:string|null;requested_deposit_paise:number;ownership_declaration_type:string;has_original_price_evidence?:boolean}|null;
   pricing:Record<string,number|null>|null;
   images:Array<{id:string;alt_text:string|null;moderation_status:string;is_cover:boolean;url?:string|null}>;
-  history:Array<{id:number;actor_user_id:string|null;action:string;from_status:string|null;to_status:string;reason:string|null;created_at:string}>;
+  history:Array<{id:number;actor_user_id:string|null;action:string;from_status:string|null;to_status:string;reason:string|null;internal_notes:string|null;created_at:string}>;
 };
 const INR=new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2});
 
@@ -81,7 +81,7 @@ export default function AdminListingQueuePage(){
         {item.details?.original_price_evidence_note&&<p className="admin-case-reason">Original-price note: {item.details.original_price_evidence_note}</p>}{item.details?.has_original_price_evidence&&<Button size="sm" variant="outline" onClick={()=>void previewEvidence(item)}><Eye size={14}/> Audited purchase evidence preview</Button>}
         <div className="listing-review-photos">{item.images.map(image=><div className="listing-review-photo" key={image.id}><span>{image.is_cover?"Cover photo":"Copy photo"} · {image.moderation_status}</span><Button size="sm" variant="outline" disabled={busy===item.id} onClick={()=>void preview(item,image.id)}><Eye size={14}/> Audited preview</Button></div>)}</div>
         {item.pricing&&<div className="admin-case-meta">{([["3 days",item.pricing.rental_3d_paise],["7 days",item.pricing.rental_7d_paise],["15 days",item.pricing.rental_15d_paise],["30 days",item.pricing.rental_30d_paise]] as Array<[string,number|null]>).filter(x=>x[1]!=null).map(([label,value])=><span key={label}>{label}: {INR.format((value??0)/100)}</span>)}</div>}
-        <details className="admin-audit-history"><summary>Moderation history ({item.history.length})</summary><ol>{item.history.map(event=><li key={event.id}><strong>{event.action.replaceAll("_"," ")}</strong><span>{new Date(event.created_at).toLocaleString("en-IN")} · {event.actor_user_id??"System"}</span>{event.reason&&<small>{event.reason}</small>}</li>)}</ol></details>
+        <details className="admin-audit-history"><summary>Moderation history ({item.history.length})</summary><ol>{item.history.map(event=><li key={event.id}><strong>{event.action.replaceAll("_"," ")}</strong><span>{new Date(event.created_at).toLocaleString("en-IN")} · {event.actor_user_id??"System"}</span>{event.reason&&<small>Decision reason: {event.reason}</small>}{event.internal_notes&&<small>Internal note: {event.internal_notes}</small>}</li>)}</ol></details>
         <div className="admin-case-actions">
           {item.listing_status==="pending_review"&&<><Button size="sm" disabled={busy===item.id} onClick={()=>void decide(item,"approve")}>Approve</Button><Button size="sm" variant="danger" disabled={busy===item.id} onClick={()=>void decide(item,"reject")}>Reject</Button></>}
           {item.listing_status==="approved"&&<Button size="sm" variant="danger" disabled={busy===item.id} onClick={()=>void decide(item,"suspend")}>Suspend</Button>}
