@@ -11,6 +11,7 @@ const cacheSql = await read("../../supabase/migrations/202610300013_isbn_metadat
 const bundleWaitlistSql = await read("../../supabase/migrations/202610300014_bundles_and_waitlist_notifications.sql");
 const reservationReleaseSql = await read("../../supabase/migrations/202610300015_waitlist_reservation_release.sql");
 const moderationFixSql = await read("../../supabase/migrations/202610300016_catalogue_moderation_photo_and_bundle_fixes.sql");
+const currentAvailabilitySql = await read("../../supabase/migrations/202610300017_waitlist_current_availability_check.sql");
 const bundleOwnerUi = await read("../../src/pages/owner-dashboard-page.tsx");
 const bundleAdminUi = await read("../../src/pages/admin-bundle-queue-page.tsx");
 const api = await read("../../supabase/functions/catalogue-api/index.ts");
@@ -181,4 +182,15 @@ test("public bundles disappear when one included physical copy is unavailable", 
 
 test("public book detail is readable before the authenticated Edge API branch", () => {
   assert.ok(api.indexOf('action === "listing_detail"') < api.indexOf("getAuthenticatedUser(req)"));
+});
+
+test("ISBN search accepts ISBN-10 by normalizing it before discovery RPC", () => {
+  assert.match(discoveryUi, /normalizeIsbn\(isbn\)/);
+  assert.match(discoveryUi, /submittedFilters/);
+});
+
+test("undated waitlists only receive notices when the copy is free now", () => {
+  assert.match(currentAvailabilitySql, /w\.requested_start_at is null/);
+  assert.match(currentAvailabilitySql, /blocked_period @> now\(\)/);
+  assert.match(currentAvailabilitySql, /reserved_period @> now\(\)/);
 });
