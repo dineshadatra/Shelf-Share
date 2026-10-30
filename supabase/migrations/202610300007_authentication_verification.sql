@@ -113,6 +113,10 @@ values
   ('verification-selfie-private','verification-selfie-private',false,5242880,array['image/jpeg'])
 on conflict (id) do nothing;
 
+update storage.buckets
+set public = false
+where id in ('identity-private','profile-private','verification-selfie-private');
+
 create policy profile_private_upload_own on storage.objects
 for insert to authenticated
 with check (
@@ -277,7 +281,8 @@ create or replace function public.review_verification_case(
   p_action text,
   p_reason text default null,
   p_internal_notes text default null,
-  p_assignee uuid default null
+  p_assignee uuid default null,
+  p_address_verified boolean default false
 )
 returns void
 language plpgsql security definer
@@ -332,7 +337,12 @@ begin
     end if;
     update public.identity_documents set status = 'accepted', reviewed_by = v_actor, reviewed_at = now()
       where verification_case_id = p_case_id;
+    if p_address_verified and not exists (
+      select 1 from public.verification_case_files f
+      where f.verification_case_id = p_case_id and f.file_kind = 'address_evidence'
+    ) then raise exception 'Address verification cannot be marked complete without submitted address evidence'; end if;
     update public.user_verifications set status = 'verified', identity_verified_at = now(),
+      address_verified_at = case when p_address_verified then now() else address_verified_at end,
       reviewed_by = v_actor, reviewed_at = now(), rejection_reason_code = null
       where user_id = v_case.user_id and age_eligible is true and phone_verified_at is not null;
     if not found then raise exception 'Phone and age eligibility must be complete before approval'; end if;
@@ -377,8 +387,8 @@ begin
     jsonb_build_object('case_id',p_case_id));
 end;
 $$;
-revoke all on function public.review_verification_case(uuid,text,text,text,uuid) from public, anon;
-grant execute on function public.review_verification_case(uuid,text,text,text,uuid) to authenticated;
+revoke all on function public.review_verification_case(uuid,text,text,text,uuid,boolean) from public, anon;
+grant execute on function public.review_verification_case(uuid,text,text,text,uuid,boolean) to authenticated;
 
 
 -- A member may read only their own latest case summary; private reviewer notes and file keys remain hidden.
@@ -689,8 +699,8 @@ begin
     jsonb_build_object('case_id',p_case_id));
 end;
 $$;
-revoke all on function public.review_verification_case(uuid,text,text,text,uuid) from public, anon;
-grant execute on function public.review_verification_case(uuid,text,text,text,uuid) to authenticated;
+revoke all on function public.review_verification_case(uuid,text,text,text,uuid,boolean) from public, anon;
+grant execute on function public.review_verification_case(uuid,text,text,text,uuid,boolean) to authenticated;
 
 -- Staff may read case files only through the Edge Function. Prevent direct exposure of file metadata.
 -- Keep the existing user_verifications self-read policy limited to the granted safe columns.
@@ -971,8 +981,8 @@ begin
     jsonb_build_object('case_id',p_case_id));
 end;
 $$;
-revoke all on function public.review_verification_case(uuid,text,text,text,uuid) from public, anon;
-grant execute on function public.review_verification_case(uuid,text,text,text,uuid) to authenticated;
+revoke all on function public.review_verification_case(uuid,text,text,text,uuid,boolean) from public, anon;
+grant execute on function public.review_verification_case(uuid,text,text,text,uuid,boolean) to authenticated;
 
 -- Staff may read case files only through the Edge Function. Prevent direct exposure of file metadata.
 -- Keep the existing user_verifications self-read policy limited to the granted safe columns.
