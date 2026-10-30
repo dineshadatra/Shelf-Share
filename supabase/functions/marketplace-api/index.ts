@@ -542,7 +542,7 @@ Deno.serve(async (req) => {
       const { data, error } = await userClient.rpc("request_deposit_release", { p_deposit_id: depositId, p_idempotency_key: idempotency });
       if (error) return reply(400, { error: error.message });
       const { data: request } = await service.from("deposit_release_requests").select("amount_paise").eq("id", data).maybeSingle();
-      const release = await adapter.releaseDeposit(deposit.provider_reference, idempotency);
+      const release = await adapter.releaseDeposit(deposit.provider_reference, request?.amount_paise ?? deposit.amount_paise, idempotency);
       return reply(202, { release_request_id: data, amount_paise: request?.amount_paise ?? null,
         status: "release_pending", provider_status: release.status, provider_confirmed: false });
     }
@@ -618,6 +618,22 @@ Deno.serve(async (req) => {
         deposits_approved: item.enabled_for_deposits === true,
       }));
       return reply(200, { providers: items, checkout_available: items.some((x) => x.adapter_registered && x.approved) });
+    }
+
+    if (action === "open_dispute") {
+      const bookingId = text(payload.booking_id, 64);
+      const reasonCode = text(payload.reason_code, 80);
+      const description = text(payload.description, 4000);
+      if (!bookingId || !reasonCode || !description || description.length < 20) {
+        return reply(400, { error: "Booking, dispute reason and a detailed description are required" });
+      }
+      const { data, error } = await userClient.rpc("open_booking_dispute", {
+        p_booking_id: bookingId, p_reason_code: reasonCode, p_description: description,
+      });
+      if (error) return reply(400, { error: error.message });
+      return reply(201, { dispute_id: data, status: "open",
+        deposit_hold_requested: true, deposit_hold_confirmed: false,
+        message: "Dispute opened. Any permitted provider deposit hold will be confirmed separately by a signed provider event." });
     }
 
     if (action === "report_incident") {
