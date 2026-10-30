@@ -311,3 +311,17 @@ button:disabled{cursor:not-allowed;opacity:.52} a{color:inherit;text-decoration:
 .owner-bundle-status{display:grid;gap:5px;justify-items:end}
 .owner-bundle-status small{max-width:250px;text-align:right;font-size:9px;line-height:1.4;color:#86765b}
 @media(max-width:560px){.owner-bundle-status{justify-items:start}.owner-bundle-status small{text-align:left}}
+
+
+/* Booking, payment and handover workspace */
+.booking-progress-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 14px}
+.booking-progress-grid>span{display:grid;gap:2px;padding:9px 10px;border:1px solid var(--border-subtle,#e9e6dd);border-radius:9px;font-size:11px;color:var(--text-secondary,#716f66)}
+.booking-progress-grid b{font-weight:600;color:var(--text-primary,#28352b)}
+.booking-price-breakdown{display:grid;gap:8px;padding:12px;border:1px solid var(--border-subtle,#e9e6dd);border-radius:10px;background:var(--surface-subtle,#faf9f5)}
+.booking-price-breakdown>span,.booking-price-breakdown>strong{display:flex;justify-content:space-between;gap:12px;font-size:12px}
+.booking-price-breakdown>strong{padding-top:8px;border-top:1px solid var(--border-subtle,#e9e6dd);font-size:13px}
+.status-pill{display:inline-flex;align-items:center;border-radius:99px;padding:5px 10px;background:#f0f1ec;color:#526052;font-size:10px;font-weight:650;text-transform:capitalize}
+@media(max-width:560px){
+ .booking-progress-grid{grid-template-columns:1fr}
+ .booking-price-breakdown>span,.booking-price-breakdown>strong{align-items:flex-start}
+}
