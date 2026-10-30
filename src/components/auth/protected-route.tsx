@@ -8,6 +8,7 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
   const { configured, loading, user } = useAuth();
   const location = useLocation();
   const [profileExists, setProfileExists] = useState<boolean | null>(null);
+  const [accountStatus, setAccountStatus] = useState<string | null>(null);
   const [checkingProfile, setCheckingProfile] = useState(true);
   const [staffAllowed, setStaffAllowed] = useState<boolean | null>(staffOnly ? null : true);
   const [checkingStaff, setCheckingStaff] = useState(staffOnly);
@@ -16,6 +17,7 @@ export function ProtectedRoute({ children, staffOnly = false }: { children: Reac
     let active = true;
     if (!user || !supabase) {
       setProfileExists(null);
+      setAccountStatus(null);
       setCheckingProfile(false);
       return;
     }
