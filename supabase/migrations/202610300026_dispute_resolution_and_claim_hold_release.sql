@@ -116,11 +116,11 @@ language sql stable security definer
 set search_path=pg_catalog,public
 as $$
   select d.id,d.booking_id,d.status,d.amount_paise,
-    case when d.status in ('held_by_provider','claim_hold_pending','claim_hold','release_pending','refund_pending','partially_applied')
+    case when d.provider_reference is not null and d.status in ('held_by_provider','claim_hold_pending','claim_hold','release_pending','refund_pending','partially_applied')
       then greatest(d.amount_paise-coalesce((select sum(l.amount_paise) from public.deposit_ledger l
         where l.deposit_id=d.id and l.event_type in ('released','amount_applied')),0),0)::bigint
       else 0::bigint end,
-    case when d.status in ('held_by_provider','partially_applied','claim_hold') and b.status='completed'
+    case when d.provider_reference is not null and d.status in ('held_by_provider','partially_applied','claim_hold') and b.status='completed'
       and exists(select 1 from public.booking_workflow_configuration c where c.id=true
         and c.deposit_claim_window_seconds is not null
         and b.completed_at+make_interval(secs=>c.deposit_claim_window_seconds)<=now())
@@ -150,8 +150,10 @@ begin
   if v_user is null then raise exception 'Authentication required'; end if;
   if p_idempotency_key is null or length(p_idempotency_key)<16 or length(p_idempotency_key)>128 then raise exception 'Valid idempotency key required'; end if;
   select * into v_deposit from public.deposits where id=p_deposit_id for update;
-  if not found or v_deposit.payer_id<>v_user or not v_deposit.feature_enabled_at_creation then raise exception 'Provider-held deposit not found'; end if;
-  select id into v_request from public.deposit_release_requests where idempotency_key=p_idempotency_key;
+  if not found or v_deposit.payer_id<>v_user or not v_deposit.feature_enabled_at_creation
+    or v_deposit.provider_reference is null then raise exception 'Provider-confirmed deposit not found'; end if;
+  select id into v_request from public.deposit_release_requests
+    where idempotency_key=p_idempotency_key and deposit_id=v_deposit.id and requested_by=v_user;
   if v_request is not null then return v_request; end if;
   if v_deposit.status not in ('held_by_provider','partially_applied','claim_hold') then raise exception 'Deposit is not releasable'; end if;
   select * into v_booking from public.bookings where id=v_deposit.booking_id for update;
