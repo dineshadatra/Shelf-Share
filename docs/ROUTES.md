@@ -10,7 +10,7 @@
 |---|---|---|---|---|
 | `/` | Home | Public | Public | Editorial landing; search navigates to Discover |
 | `/discover` | Discover Books | Public | Public | Sample catalogue; title/author/category/city filters and sorting |
-| `/books/:id` | Book Details | Public | Public | Sample detail page; unknown ID currently falls back to first sample record |
+| `/books/:id` | Book Details | Public | Public | Sample detail page; unknown IDs show a not-in-sample-catalogue state |
 | `/login` | Login | Auth | Public | Phone form; OTP service not connected |
 | `/register` | Registration | Auth | Public | Mobile-first registration preview; no account created |
 | `/verification` | Verification | Member | Signed-in user in intended product | Manual-review explainer; no upload/review workflow |
