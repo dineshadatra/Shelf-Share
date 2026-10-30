@@ -206,7 +206,7 @@ create or replace function public.sync_verified_phone()
 returns void
 language plpgsql security definer
 set search_path = ''
-as $
+as $func$
 declare
   v_user_id uuid := auth.uid();
   v_phone_confirmed_at timestamptz;
@@ -223,7 +223,7 @@ begin
   values (v_user_id, v_user_id, 'phone_number_changed',
     jsonb_build_object('phone_verified_at', v_phone_confirmed_at));
 end;
-$;
+$func$;
 revoke all on function public.sync_verified_phone() from public, anon;
 grant execute on function public.sync_verified_phone() to authenticated;
 
