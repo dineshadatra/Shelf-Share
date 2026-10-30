@@ -301,10 +301,15 @@ Deno.serve(async (req) => {
           metadata: { bookingId, paymentId: payment.id },
           returnUrl: allowedOrigin + "/rentals",
         });
-        await service.from("payments").update({
+        const { error: persistError } = await service.from("payments").update({
           provider_order_id: intent.providerOrderReference,
           provider_status: intent.status,
+          provider_checkout_url: intent.checkoutUrl,
         }).eq("id", payment.id);
+        if (persistError) return reply(202, { payment_id: payment.id, booking_id: bookingId, status: "payment_pending",
+          message: "Provider created a checkout attempt, but its recovery link is being reconciled. Do not create another payment attempt." });
+        await service.from("outbox_events").update({ published_at: new Date().toISOString() })
+          .eq("idempotency_key", "payment-intent:" + payment.idempotency_key).is("published_at", null);
         return reply(202, { payment_id: payment.id, booking_id: bookingId, status: "payment_pending", checkout_url: intent.checkoutUrl });
       } catch {
         await service.from("payments").update({ provider_status: "intent_creation_uncertain" }).eq("id", payment.id);
