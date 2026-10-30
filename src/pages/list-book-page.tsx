@@ -146,8 +146,9 @@ export default function ListBookPage() {
         const key=user.id+"/"+id+"/"+crypto.randomUUID()+".jpg";
         const {error:uploadError}=await supabase.storage.from("book-listing-public").upload(key,blob,{contentType:"image/jpeg",cacheControl:"3600",upsert:false});
         if(uploadError)throw uploadError;
-        const {error:imageError}=await supabase.rpc("register_book_listing_image",{p_book_copy_id:id,p_object_key:key,p_alt_text:title.title+" physical copy",p_is_cover:savedImages.length===0&&index===0,p_display_order:savedImages.length+index});
+        const {data:imageId,error:imageError}=await supabase.rpc("register_book_listing_image",{p_book_copy_id:id,p_object_key:key,p_alt_text:title.title+" physical copy",p_is_cover:savedImages.length===0&&index===0,p_display_order:savedImages.length+index});
         if(imageError)throw imageError;
+        setSavedImages(old=>[...old,{id:imageId as string,moderation_status:"pending_review"}]);
       }
       setPhotos([]);
       if(evidence){
