@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { CalendarDays, ChevronLeft, ChevronRight, Compass, Heart, ListFilter, LocateFixed, Map, MapPin, Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import { PublicLayout } from "@/layouts/public-layout";
@@ -79,6 +79,7 @@ export default function DiscoverPage() {
   const [saved,setSaved]=useState<string[]>([]);
   const [savingId,setSavingId]=useState("");
   const [nearbyRequested,setNearbyRequested]=useState(false);
+  const initialLoadDone=useRef(false);
 
   useEffect(()=>{
     if(!supabase)return;
@@ -130,7 +131,8 @@ export default function DiscoverPage() {
     if(invokeError){setError(invokeError.message);setLoading(false);return;}
     setData(response as Result);setPage(nextPage);setLoading(false);
   },[filters,minPrice,maxPrice,fromDate,untilDate]);
-  useEffect(()=>{void load(1);},[load]);
+  useEffect(()=>{ if(!initialLoadDone.current){initialLoadDone.current=true;void load(1);} },[load]);
+  useEffect(()=>{ if(initialLoadDone.current) void load(1); },[sort,city,coordinates]);
 
   const locationOptIn=()=>{
     if(!navigator.geolocation){setLocationMessage("Location is not available in this browser. You can still browse by locality.");return;}
@@ -175,7 +177,7 @@ export default function DiscoverPage() {
       <button type="button" className="filter-toggle" onClick={()=>setFiltersOpen(x=>!x)} aria-expanded={filtersOpen}><SlidersHorizontal size={16}/> Filters</button>
       <button type="button" className="discovery-action" onClick={setWeekend}><CalendarDays size={15}/> Weekend availability</button>
       <button type="button" className="discovery-action" onClick={()=>setSort("recommended")}><Sparkles size={15}/> Recommended</button>
-      <button type="button" className="discovery-action" onClick={()=>{if(coordinates){setSort("distance");void load(1);}else locationOptIn();}}><LocateFixed size={15}/> {coordinates?"Nearby books":"Use my location"}</button>
+      <button type="button" className="discovery-action" onClick={()=>{if(coordinates){setSort("distance");}else locationOptIn();}}><LocateFixed size={15}/> {coordinates?"Nearby books":"Use my location"}</button>
       <div className="discovery-view-toggle"><button type="button" className={!mapView?"active":""} onClick={()=>setMapView(false)}><ListFilter size={15}/> List</button><button type="button" className={mapView?"active":""} onClick={()=>setMapView(true)}><Map size={15}/> Map</button></div>
     </div>
     <p className="location-consent-note">{locationMessage}</p>
