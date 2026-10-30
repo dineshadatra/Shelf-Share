@@ -10,7 +10,7 @@
 - The registration RPC checks the verified phone timestamp and DOB in Postgres. Registration policies must be activated by an authorised product/legal operator before registration can complete.
 - Identity documents are stored in private Storage buckets. Browser clients can upload only to their own user-prefixed paths. No client read policy exists for identity documents, selfie or private profile captures.
 - Manual review is performed with the verification-admin Edge Function and the review_verification_case database function. Reviewer role, assignment and the cannot-review-own-account constraint are checked server-side. Suspension marks the profile suspended, clears the verified status used by listing/booking gates, and applies a long-duration Auth ban via the server-only Admin API. Reinstate/unban must remain a separate authorised operational decision.
-- Marketplace listing and booking gates continue to depend on verified status in database policies/functions; UI state is not treated as authority.
+- Marketplace listing creation and edits require an active profile plus server-side verified/age-eligible status. Booking creation independently checks both reader and owner verification. When a previously verified member loses that status, database triggers pause their existing copies and make them unavailable; account restrictions do the same. Re-verification does not automatically republish paused books.
 
 ## Provider and deployment steps
 
