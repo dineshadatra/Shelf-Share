@@ -121,11 +121,11 @@ All values are integer paise unless a field is a percentage/count/date. Definiti
 - Active books now: current physical copies whose listing is approved and available for rent, independent of the selected historical period.
 - Locality performance: paid bookings and gross rental transaction value grouped by the locality of the physical copy.
 
-Finance cost entries use record_financial_cost, require finance.costs.write and MFA AAL2, and retain source reference/reason/idempotency metadata. Cost rows are immutable; record a separate, evidenced reversal rather than editing history. Populate gateway, verification, referral and support costs from actual invoices/receipts/approved accounting feeds. Do not invent or estimate amounts to make a dashboard appear complete.
+Finance cost entries use record_financial_cost, require finance.costs.write and MFA AAL2, and retain source reference/reason/idempotency metadata. Cost rows are immutable; use reverse_financial_cost_entry to create one evidenced, audited reversal rather than editing history. Populate gateway, verification, referral and support costs from actual invoices/receipts/approved accounting feeds. Do not invent or estimate amounts to make a dashboard appear complete.
 
 ## Deployment checklist
 
-1. Apply 202610310008_notifications_support_financial_analytics.sql and 202610310009_operations_hardening.sql in lexical order after migrations 006 and 007, in a disposable/staging Supabase project first.
+1. Apply 202610310008_notifications_support_financial_analytics.sql through 202610310012_notification_backfill_and_resubmission.sql in lexical order after migrations 006 and 007, in a disposable/staging Supabase project first.
 2. Deploy customer-operations and financial-report with JWT verification enabled.
 3. Deploy notification-dispatch and support-sla-sweep with JWT verification disabled; protect them with their independent 32-character scheduler secrets.
 4. Configure APP_ORIGIN/CUSTOMER_APP_ORIGINS, FINANCE_REPORT_ORIGINS and ADMIN_PORTAL_ORIGINS to exact HTTPS origins. Do not use wildcard origins for browser APIs.
