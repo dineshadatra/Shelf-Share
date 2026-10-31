@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -20,7 +20,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../src/components/marketplace/qr-code-scanner.tsx"),
   read("../../supabase/config.toml"),
   read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql"),
-  read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql")
+  read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql"),
+  read("../../supabase/migrations/202610300028_member_financial_serialization.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -309,7 +310,28 @@ test("every enabled marketplace provider must support idempotent calls", () => {
   assert.match(providerGate, /check \(not enabled_for_rent or supports_idempotency\)/);
   assert.match(adapter, /idempotencyKey/);
   assert.match(adapter, /No provider is registered until written product-level approval is obtained/);
-  assert.match(api, /No approved and deployed adapter is registered|provider adapter is deployed/);
+  assert.match(api, /No approved and deployed adapter is registered|provider adapter is detest("deposit release is serialized against new bookings, return closure and payout creation", () => {
+  assert.match(serialization, /private\.lock_marketplace_members/);
+  assert.match(serialization, /order by p\.id\s+for update/);
+  const request = functionBody(serialization, "public.request_book_booking(");
+  const accept = functionBody(serialization, "public.accept_book_booking_request(");
+  const completion = functionBody(serialization, "private.complete_handover_if_ready(");
+  const dispute = functionBody(serialization, "public.open_booking_dispute(");
+  const release = functionBody(serialization, "public.request_deposit_release(");
+  const payout = functionBody(serialization, "public.create_owner_payout_request(");
+  assert.match(request, /lock_marketplace_members/);
+  assert.match(accept, /lock_marketplace_members/);
+  assert.match(completion, /lock_marketplace_members/);
+  assert.match(dispute, /lock_marketplace_members/);
+  assert.match(release, /lock_marketplace_members/);
+  assert.match(release, /status='requested'.*status='hold'/s);
+  assert.match(release, /deposit_release_requests.*idempotency_key/s);
+  assert.match(payout, /lock_marketplace_members/);
+  assert.match(payout, /public\.disputes/);
+  assert.match(payout, /payment_disputes/);
+});
+
+ployed/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
