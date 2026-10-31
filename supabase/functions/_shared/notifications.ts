@@ -65,7 +65,8 @@ export function renderApprovedSmsTemplate(
     throw new Error("sms_template_variable_count_invalid");
   }
   const approved = new Map(policy.map(item => [item.key, item.type]));
-  if (approved.size !== policy.length || names.some(name => !approved.has(name))) {
+  if (approved.size !== policy.length || names.some(name => !approved.has(name) ||
+      /(^|_)(otp|code|token|pin|password|secret)(_|$)/iu.test(name))) {
     throw new Error("sms_template_variable_not_preapproved");
   }
   const rendered = template.replace(TOKEN, (_token, name: string) => {
