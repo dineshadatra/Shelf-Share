@@ -1,5 +1,26 @@
 begin;
 
+
+-- Track actual referral reward issue time for period reporting; older rows can
+-- only be backfilled to creation time, which is explicitly a historical proxy.
+alter table public.referral_rewards add column if not exists issued_at timestamptz;
+update public.referral_rewards set issued_at=created_at
+where status='issued' and issued_at is null;
+
+create or replace function private.set_referral_reward_issued_at()
+returns trigger language plpgsql set search_path=pg_catalog
+as $
+begin
+  if new.status='issued' and (tg_op='INSERT' or old.status is distinct from 'issued') then
+    new.issued_at:=coalesce(new.issued_at,now());
+  end if;
+  return new;
+end;
+$;
+create trigger referral_reward_issued_at
+before insert or update of status on public.referral_rewards
+for each row execute function private.set_referral_reward_issued_at();
+
 -- Notifications are event-driven. Auth OTP remains in Supabase Auth and is never
 -- copied into the application notification payload or delivery queue.
 create table public.notification_preferences (
