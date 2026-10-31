@@ -72,7 +72,7 @@ function errorStatus(error: unknown): number {
 
 Deno.serve(async (request: Request) => {
   const origin = request.headers.get("Origin") ?? "";
-  const allowed = (Deno.env.get("CUSTOMER_APP_ORIGINS") ?? Deno.env.get("APP_ORIGIN") ?? "")
+  const allowed = (Deno.env.get("CUSTOMER_APP_ORIGINS") ?? Deno.env.get("ADMIN_PORTAL_ORIGINS") ?? Deno.env.get("APP_ORIGIN") ?? "")
     .split(",").map(value => value.trim()).filter(Boolean);
   const allowedOrigin = origin && allowed.includes(origin) ? origin : "";
   if (request.method === "OPTIONS") {
