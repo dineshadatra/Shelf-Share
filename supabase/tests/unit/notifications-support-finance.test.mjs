@@ -15,7 +15,7 @@ test("all requested notification event families have registered template keys", 
     "rental.due_reminder","rental.overdue","extension.requested","return.confirmed",
     "dispute.opened","dispute.updated","refund.updated","payout.updated",
     "referral.rewarded","community.activity","grievance.updated"
-  ]) assert.ok(NOTIFICATION_EVENT_KEYS.includes(key as never), "missing " + key);
+  ]) assert.ok(NOTIFICATION_EVENT_KEYS.includes(key), "missing " + key);
   assert.equal(NOTIFICATION_EVENT_KEYS.length,24);
 });
 
@@ -45,7 +45,7 @@ test("SMS rendering requires every variable to be pre-approved in the DLT policy
 
 test("SMS templates with too many variables or duplicated variable names fail closed", () => {
   const policy = [
-    { key: "a", type: "reference" as const },
+    { key: "a", type: "reference"  },
     { key: "b", type: "reference" as const },
     { key: "c", type: "reference" as const },
     { key: "d", type: "reference" as const }
@@ -60,7 +60,7 @@ test("SMS templates with too many variables or duplicated variable names fail cl
 test("CSV export quotes cells and neutralizes spreadsheet formulas", () => {
   assert.equal(
     buildCsv([{ metric: "=HYPERLINK(1)", note: 'hello, "world"' }], ["metric","note"]),
-    '"metric","note"\r\n"\\'=HYPERLINK(1)","hello, ""world"""'
+    "\"metric\",\"note\"\r\n\"'=HYPERLINK(1)\",\"hello, \"\"world\"\"\""
   );
 });
 
