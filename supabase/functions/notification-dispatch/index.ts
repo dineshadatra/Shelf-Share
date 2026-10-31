@@ -35,6 +35,18 @@ Deno.serve(async (request) => {
 
     for (const job of jobs ?? []) {
       try {
+        const { data: sendable, error: sendableError } = await admin.rpc("notification_delivery_job_sendable", {
+          p_job_id: job.job_id
+        });
+        if (sendableError) throw sendableError;
+        if (sendable !== true) {
+          await admin.from("notification_delivery_jobs").update({
+            status: "cancelled", claimed_at: null, updated_at: new Date().toISOString()
+          }).eq("id", job.job_id).eq("status", "processing");
+          await admin.from("notifications").update({ status: "cancelled" })
+            .eq("id", job.notification_id).eq("status", "queued");
+          continue;
+        }
         const { data: template, error: templateError } = await admin.from("notification_templates")
           .select("dlt_variable_policy,sms_enabled,sms_content_template_id,sms_header")
           .eq("template_key", job.template_key).single();
