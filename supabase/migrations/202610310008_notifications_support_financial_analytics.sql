@@ -381,7 +381,7 @@ set search_path = pg_catalog,public
 as $$
 declare v_job record;
 begin
-  if coalesce(current_setting('role',true),'')<>'service_role' then
+  if coalesce(auth.jwt()->>'role','')<>'service_role' then
     raise exception 'Service role required';
   end if;
   if p_limit not between 1 and 100 then raise exception 'Invalid claim limit'; end if;
@@ -429,7 +429,7 @@ set search_path = pg_catalog,public
 as $$
 declare v_job public.notification_delivery_jobs%rowtype;
 begin
-  if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Service role required'; end if;
+  if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'Service role required'; end if;
   if p_status not in ('sent','failed') then raise exception 'Invalid delivery status'; end if;
   select * into v_job from public.notification_delivery_jobs where id=p_job_id for update;
   if not found or v_job.status<>'processing' then raise exception 'Delivery job is not processing'; end if;
@@ -962,7 +962,7 @@ set search_path = pg_catalog,public
 as $$
 declare v_ticket record; v_count integer:=0; v_assignee uuid;
 begin
-  if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Service role required'; end if;
+  if coalesce(auth.jwt()->>'role','')<>'service_role' then raise exception 'Service role required'; end if;
   for v_ticket in
     select * from public.grievance_tickets
     where status not in ('resolved','closed') and escalated_at is null
