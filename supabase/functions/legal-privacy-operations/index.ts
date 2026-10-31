@@ -201,6 +201,58 @@ Deno.serve(async (request: Request) => {
         documentSha256: acceptance.document_sha256, context: acceptance.acceptance_context }, 200, allowedOrigin);
     }
 
+    if (action === "download-my-data") {
+      const [
+        { data: profile, error: profileError },
+        { data: verification, error: verificationError },
+        { data: bookings, error: bookingError },
+        { data: acceptances, error: acceptanceError },
+        { data: consentEvents, error: consentError },
+        { data: preferences, error: preferenceError },
+        { data: tickets, error: ticketError }
+      ] = await Promise.all([
+        admin.from("profiles").select("id,display_name,avatar_object_key,bio,preferred_city_id,account_status,locale,created_at,updated_at").eq("id", actorId).maybeSingle(),
+        admin.from("user_verifications").select("status,age_eligible,phone_verified_at,identity_verified_at,address_verified_at,policy_version,created_at,updated_at").eq("user_id", actorId).maybeSingle(),
+        admin.from("bookings").select("id,booking_number,reader_id,owner_id,status,requested_start_at,requested_end_at,rental_start_at,rental_due_at,completed_at,rent_subtotal_paise,platform_fee_paise,tax_paise,deposit_required_paise,total_due_paise,created_at").or("reader_id.eq."+actorId+",owner_id.eq."+actorId).order("created_at",{ascending:false}).limit(1000),
+        admin.from("legal_acceptances").select("legal_document_id,document_sha256,accepted_at,acceptance_context,acceptance_source,consent_notice_version").eq("user_id",actorId).order("accepted_at",{ascending:false}).limit(500),
+        admin.from("privacy_consent_events").select("purpose_key,action,notice_version,source,recorded_at").eq("user_id",actorId).order("recorded_at",{ascending:false}).limit(500),
+        admin.from("notification_preferences").select("in_app_enabled,sms_service_enabled,sms_marketing_enabled,email_enabled,push_enabled,sms_service_consent_at,sms_marketing_consent_at,sms_revoked_at,updated_at").eq("user_id",actorId).maybeSingle(),
+        admin.from("grievance_tickets").select("ticket_number,category,subject,status,priority,created_at,updated_at,first_response_at,resolved_at,closed_at").eq("requester_id",actorId).order("created_at",{ascending:false}).limit(500)
+      ]);
+      const errors=[profileError,verificationError,bookingError,acceptanceError,consentError,preferenceError,ticketError].filter(Boolean);
+      if(errors.length)throw new Error("personal_data_export_failed");
+      const bookingIds=(bookings??[]).map((item: {id:string})=>item.id);
+      let payments:unknown[]=[];
+      if(bookingIds.length){
+        const {data,error}=await admin.from("payments")
+          .select("booking_id,provider,amount_paise,currency,status,captured_at,created_at")
+          .in("booking_id",bookingIds).order("created_at",{ascending:false}).limit(1000);
+        if(error)throw new Error("personal_data_export_failed");
+        payments=data??[];
+      }
+      await logSensitive("privacy_request","privacy_data_export",actorId,actorId,
+        "User downloaded their own personal data export",{outcome:"success",metadata:{booking_count:bookings?.length??0,payment_count:payments.length}});
+      const payload={
+        export_generated_at:new Date().toISOString(),
+        account_profile:profile,
+        verification_status:verification,
+        rentals:bookings??[],
+        payment_metadata:payments,
+        legal_document_acceptances:acceptances??[],
+        consent_history:consentEvents??[],
+        notification_preferences:preferences,
+        support_ticket_metadata:tickets??[],
+        exclusions:["Raw identity-document images and source files","Full payment-card or bank credentials","Payment gateway webhook payloads","Internal staff notes, fraud signals and legally privileged material"],
+        note:"This is an automated account-data export for the authenticated user. Some records may be retained for active contracts, disputes, fraud prevention, tax/accounting or other legal obligations. Contact support for information not included."
+      };
+      return new Response(JSON.stringify(payload,null,2),{status:200,headers:{
+        "Content-Type":"application/json; charset=utf-8",
+        "Content-Disposition":'attachment; filename="shelfshare-personal-data-'+new Date().toISOString().slice(0,10)+'.json"',
+        "Cache-Control":"no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer",
+        ...(allowedOrigin?{"Access-Control-Allow-Origin":allowedOrigin,"Vary":"Origin"}:{})
+      }});
+    }
+
     if (action === "create-privacy-request") {
       const type = textValue(body.requestType, "request_type", 4, 30);
       const description = textValue(body.description, "description", 10, 5000);
@@ -209,6 +261,54 @@ Deno.serve(async (request: Request) => {
       });
       if (error) throw error;
       return json({ created: true, requestId: data }, 201, allowedOrigin);
+    }
+
+    if (action === "privacy-verify-request") {
+      await requirePermission("privacy.manage"); requireAal2();
+      const id=uuidValue(body.requestId,"request_id");
+      const reason=textValue(body.reason,"reason",20,2000);
+      const {data:item,error:readError}=await admin.from("privacy_requests")
+        .select("id,requester_id,request_type,status").eq("id",id).maybeSingle();
+      if(readError||!item)throw new Error("privacy_request_not_found");
+      const {error:updateError}=await admin.from("privacy_requests").update({
+        identity_verified_at:new Date().toISOString(),status:"in_progress",updated_at:new Date().toISOString()
+      }).eq("id",id);
+      if(updateError)throw updateError;
+      const {error:eventError}=await admin.from("privacy_request_events").insert({
+        privacy_request_id:id,actor_id:actorId,event_type:"identity_verified",
+        old_status:item.status,new_status:"in_progress",internal_reason:reason,
+        public_message:"Your identity check is complete and your request is being processed."
+      });
+      if(eventError)throw eventError;
+      await logSensitive("privacy_request","privacy_requests",id,item.requester_id,"Verified identity for privacy-rights request");
+      await audit("privacy_request_identity_verified","privacy_requests",id,reason);
+      return json({verified:true},200,allowedOrigin);
+    }
+
+    if (action === "privacy-correct-profile") {
+      await requirePermission("privacy.manage"); requireAal2();
+      const requestId=uuidValue(body.requestId,"request_id");
+      const {data:caseRow,error:caseError}=await admin.from("privacy_requests")
+        .select("id,requester_id,request_type,status,identity_verified_at")
+        .eq("id",requestId).maybeSingle();
+      if(caseError||!caseRow||caseRow.request_type!=="correction"||caseRow.status!=="in_progress"||!caseRow.identity_verified_at){
+        throw new Error("verified_correction_request_required");
+      }
+      const patch:Record<string,unknown>={updated_at:new Date().toISOString()};
+      if(body.displayName!==undefined)patch.display_name=textValue(body.displayName,"display_name",1,80);
+      if(body.bio!==undefined){
+        if(body.bio!==null&&typeof body.bio!=="string")throw new Error("invalid_bio");
+        patch.bio=body.bio===null?null:(body.bio as string).slice(0,500);
+      }
+      if(body.preferredCityId!==undefined)patch.preferred_city_id=body.preferredCityId===null?null:uuidValue(body.preferredCityId,"preferred_city_id");
+      if(body.locale!==undefined)patch.locale=textValue(body.locale,"locale",2,12);
+      if(Object.keys(patch).length===1)throw new Error("profile_correction_fields_required");
+      const reason=textValue(body.reason,"reason",20,2000);
+      const {error:updateError}=await admin.from("profiles").update(patch).eq("id",caseRow.requester_id);
+      if(updateError)throw updateError;
+      await logSensitive("privacy_request","profiles",caseRow.requester_id,caseRow.requester_id,"Correct profile fields after verified data-principal correction request");
+      await audit("privacy_profile_corrected","privacy_requests",requestId,reason,{fields:Object.keys(patch).filter(key=>key!=="updated_at")});
+      return json({corrected:true,fields:Object.keys(patch).filter(key=>key!=="updated_at")},200,allowedOrigin);
     }
 
     if (action === "my-privacy-requests") {
