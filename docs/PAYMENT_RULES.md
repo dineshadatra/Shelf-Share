@@ -177,7 +177,7 @@ The worker is `supabase/functions/marketplace-outbox/index.ts`. It leases events
 
 ## 11. Deployment sequence and environment
 
-Apply the database migrations in numeric order through `202610300031_deposit_position_pending_booking_guard.sql` in a staging Supabase project first. Deploy both Edge Functions with the project's supported Supabase CLI:
+Apply the database migrations in numeric order through `202610300032_reconciliation_amount_and_status_match.sql` in a staging Supabase project first. Deploy both Edge Functions with the project's supported Supabase CLI:
 
 - `supabase functions deploy marketplace-api --no-verify-jwt`
 - `supabase functions deploy marketplace-outbox --no-verify-jwt`
@@ -193,3 +193,5 @@ No booking timing, duration, tax, cancellation or deposit claim policy is seeded
 These are static regression tests, not a provider certification, SQL integration test or end-to-end test against a configured Supabase database. The migrations have not been applied to a live/staging project in this work; no two-session race, real webhook signature, bank settlement, provider refund or physical handover has been exercised. Before production, run migration validation and concurrent transaction tests in staging, use a provider-approved sandbox adapter, exercise webhook retry/out-of-order scenarios, and reconcile a full payment/refund/payout/deposit lifecycle against the provider reports.
 
 The exact cancellation/no-show refund matrix, fee allocation, GST/withholding treatment and provider settlement timetable remain approval gates. No automatic no-show fee, damage deduction or deposit confiscation is implemented.
+
+Reconciliation records are compared against the internal amount **and** canonical status. The provider adapter must normalize provider statuses to ShelfShare's internal status vocabulary. Equal amounts with unknown or different statuses are `status_mismatch`/`manual_review`, not a match; settlement-level summaries remain manual review until tied to bank/provider settlement evidence.
