@@ -607,6 +607,19 @@ Deno.serve(async (request: Request) => {
       return json({ incidents: data ?? [] }, 200, allowedOrigin);
     }
 
+    if (action === "incident-detail") {
+      await requirePermission("privacy.incidents.read"); requireAal2();
+      const id=uuidValue(body.incidentId,"incident_id");
+      const [{data:incident,error:incidentError},{data:events,error:eventError}]=await Promise.all([
+        admin.from("privacy_breach_incidents").select("*").eq("id",id).maybeSingle(),
+        admin.from("privacy_breach_incident_events").select("id,actor_id,event_type,old_status,new_status,reason,changed_fields,created_at")
+          .eq("incident_id",id).order("created_at",{ascending:false}).limit(200)
+      ]);
+      if(incidentError||eventError||!incident)throw new Error("privacy_incident_not_found");
+      await logSensitive("breach_incident","privacy_breach_incidents",id,null,"Read privacy breach incident detail and timeline");
+      return json({incident,events:events??[]},200,allowedOrigin);
+    }
+
     if (action === "incident-create") {
       await requirePermission("privacy.incidents.manage"); requireAal2();
       const reference = textValue(body.incidentReference, "incident_reference", 10, 50);
