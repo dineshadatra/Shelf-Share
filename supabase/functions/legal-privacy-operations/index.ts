@@ -203,6 +203,7 @@ Deno.serve(async (request: Request) => {
 
     if (action === "download-my-data") {
       const [
+        { data: authUserData, error: authUserError },
         { data: profile, error: profileError },
         { data: verification, error: verificationError },
         { data: bookings, error: bookingError },
@@ -211,7 +212,8 @@ Deno.serve(async (request: Request) => {
         { data: preferences, error: preferenceError },
         { data: tickets, error: ticketError }
       ] = await Promise.all([
-        admin.from("profiles").select("id,display_name,avatar_object_key,bio,preferred_city_id,account_status,locale,created_at,updated_at").eq("id", actorId).maybeSingle(),
+        admin.auth.admin.getUserById(actorId),
+        admin.from("profiles").select("id,display_name,bio,preferred_city_id,account_status,locale,created_at,updated_at").eq("id", actorId).maybeSingle(),
         admin.from("user_verifications").select("status,age_eligible,phone_verified_at,identity_verified_at,address_verified_at,policy_version,created_at,updated_at").eq("user_id", actorId).maybeSingle(),
         admin.from("bookings").select("id,booking_number,reader_id,owner_id,status,requested_start_at,requested_end_at,rental_start_at,rental_due_at,completed_at,rent_subtotal_paise,platform_fee_paise,tax_paise,deposit_required_paise,total_due_paise,created_at").or("reader_id.eq."+actorId+",owner_id.eq."+actorId).order("created_at",{ascending:false}).limit(1000),
         admin.from("legal_acceptances").select("legal_document_id,document_sha256,accepted_at,acceptance_context,acceptance_source,consent_notice_version").eq("user_id",actorId).order("accepted_at",{ascending:false}).limit(500),
@@ -219,28 +221,55 @@ Deno.serve(async (request: Request) => {
         admin.from("notification_preferences").select("in_app_enabled,sms_service_enabled,sms_marketing_enabled,email_enabled,push_enabled,sms_service_consent_at,sms_marketing_consent_at,sms_revoked_at,updated_at").eq("user_id",actorId).maybeSingle(),
         admin.from("grievance_tickets").select("ticket_number,category,subject,status,priority,created_at,updated_at,first_response_at,resolved_at,closed_at").eq("requester_id",actorId).order("created_at",{ascending:false}).limit(500)
       ]);
-      const errors=[profileError,verificationError,bookingError,acceptanceError,consentError,preferenceError,ticketError].filter(Boolean);
+      const errors=[authUserError,profileError,verificationError,bookingError,acceptanceError,consentError,preferenceError,ticketError].filter(Boolean);
       if(errors.length)throw new Error("personal_data_export_failed");
       const bookingIds=(bookings??[]).map((item: {id:string})=>item.id);
       let payments:unknown[]=[];
+      let deposits:unknown[]=[];
+      let depositLedger:unknown[]=[];
       if(bookingIds.length){
-        const {data,error}=await admin.from("payments")
-          .select("booking_id,provider,amount_paise,currency,status,captured_at,created_at")
-          .in("booking_id",bookingIds).order("created_at",{ascending:false}).limit(1000);
-        if(error)throw new Error("personal_data_export_failed");
-        payments=data??[];
+        const [{data:paymentData,error:paymentError},{data:depositData,error:depositError}]=await Promise.all([
+          admin.from("payments").select("booking_id,provider,amount_paise,currency,status,captured_at,created_at")
+            .in("booking_id",bookingIds).order("created_at",{ascending:false}).limit(1000),
+          admin.from("deposits").select("id,booking_id,payer_id,amount_paise,currency,status,created_at,updated_at")
+            .in("booking_id",bookingIds).order("created_at",{ascending:false}).limit(1000)
+        ]);
+        if(paymentError||depositError)throw new Error("personal_data_export_failed");
+        payments=paymentData??[];
+        deposits=depositData??[];
+        const depositIds=deposits.map((item: {id:string})=>item.id);
+        if(depositIds.length){
+          const {data,error}=await admin.from("deposit_ledger")
+            .select("deposit_id,event_type,amount_paise,created_at")
+            .in("deposit_id",depositIds).order("created_at",{ascending:false}).limit(1000);
+          if(error)throw new Error("personal_data_export_failed");
+          depositLedger=data??[];
+        }
       }
+      const [{data:privacyCases,error:privacyCaseError},{data:notificationRows,error:notificationError}] = await Promise.all([
+        admin.from("privacy_requests").select("request_reference,request_type,status,description,received_at,updated_at,completed_at,resolution_summary")
+          .eq("requester_id",actorId).order("received_at",{ascending:false}).limit(500),
+        admin.from("notifications").select("template_key,title,body,status,created_at,read_at")
+          .eq("user_id",actorId).eq("channel","in_app").order("created_at",{ascending:false}).limit(500)
+      ]);
+      if(privacyCaseError||notificationError)throw new Error("personal_data_export_failed");
       await logSensitive("privacy_request","privacy_data_export",actorId,actorId,
-        "User downloaded their own personal data export",{outcome:"success",metadata:{booking_count:bookings?.length??0,payment_count:payments.length}});
+        "User downloaded their own personal data export","success",
+        {booking_count:bookings?.length??0,payment_count:payments.length,deposit_count:deposits.length});
       const payload={
         export_generated_at:new Date().toISOString(),
+        auth_account:{email:authUserData?.user?.email??null,phone:authUserData?.user?.phone??null,created_at:authUserData?.user?.created_at??null},
         account_profile:profile,
         verification_status:verification,
         rentals:bookings??[],
         payment_metadata:payments,
+        security_deposits:deposits,
+        security_deposit_ledger:depositLedger,
         legal_document_acceptances:acceptances??[],
         consent_history:consentEvents??[],
         notification_preferences:preferences,
+        in_app_notifications:notificationRows??[],
+        privacy_and_grievance_requests:privacyCases??[],
         support_ticket_metadata:tickets??[],
         exclusions:["Raw identity-document images and source files","Full payment-card or bank credentials","Payment gateway webhook payloads","Internal staff notes, fraud signals and legally privileged material"],
         note:"This is an automated account-data export for the authenticated user. Some records may be retained for active contracts, disputes, fraud prevention, tax/accounting or other legal obligations. Contact support for information not included."
