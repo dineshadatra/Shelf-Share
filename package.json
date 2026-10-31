@@ -1,0 +1,13 @@
+{
+  "name": "shelfshare-booking-payment-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ShelfShare Supabase booking, payment, deposit and QR runtime tests",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "test:unit": "node --experimental-strip-types --test supabase/tests/unit/financial-domain.test.mjs supabase/tests/unit/handover-domain.test.mjs"
+  },
+  "type": "module"
+}

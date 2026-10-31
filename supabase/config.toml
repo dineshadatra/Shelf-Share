@@ -1,0 +1,41 @@
+project_id = "shelfshare-local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[functions.create-payment-intent]
+verify_jwt = true
+
+[functions.payment-webhook]
+verify_jwt = false
+
+[functions.create-handover-session]
+verify_jwt = true
+
+[functions.confirm-handover]
+verify_jwt = true
+
+[functions.handover-evidence]
+verify_jwt = true
+
+[functions.request-deposit-release]
+verify_jwt = true
+
+[functions.request-owner-settlement]
+verify_jwt = true
+
+[functions.request-finance-refund]
+verify_jwt = true
