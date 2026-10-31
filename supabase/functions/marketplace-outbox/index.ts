@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
         if (error) throw new Error("deposit_reference_persist_failed");
       } else if (eventType === "deposit_release_requested") {
         const depositId = str(event.aggregate_id);
-        const requestId = str(payload.release_request_id);
+        const requestId = str(payload.release_request_id ?? payload.request_id);
         const { data: deposit } = await service.from("deposits").select("provider_reference,status,provider")
           .eq("id", depositId).maybeSingle();
         const { data: release } = await service.from("deposit_release_requests").select("id,amount_paise,idempotency_key,status")
