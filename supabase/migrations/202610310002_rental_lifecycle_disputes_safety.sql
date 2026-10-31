@@ -505,8 +505,14 @@ begin
     return 'approved_pending_payment';
   end if;
   select * into v_item from public.rental_items where booking_id=v_booking.id limit 1;
+  perform 1 from public.book_copies where id=v_item.book_copy_id for update;
   select * into v_res from public.copy_reservations where booking_id=v_booking.id and status='in_use' for update;
   if not found then raise exception 'Active inventory reservation not found'; end if;
+  if exists(select 1 from public.book_availability_blocks x
+    where x.book_copy_id=v_item.book_copy_id
+      and x.blocked_period&&tstzrange(lower(v_res.reserved_period),v_req.requested_due_at+v_item.buffer_after,'[)')) then
+    raise exception 'The requested extension conflicts with an Owner availability block';
+  end if;
   begin
     update public.copy_reservations
     set reserved_period=tstzrange(lower(v_res.reserved_period),v_req.requested_due_at+v_item.buffer_after,'[)')
@@ -592,6 +598,22 @@ begin
     return 'rejected';
   end if;
   select * into v_item from public.rental_items where booking_id=v_booking.id limit 1;
+  perform 1 from public.book_copies where id=v_item.book_copy_id for update;
+  if exists(select 1 from public.book_availability_blocks x
+    where x.book_copy_id=v_item.book_copy_id
+      and x.blocked_period&&tstzrange(v_req.new_start_at-v_item.buffer_before,v_req.new_end_at+v_item.buffer_after,'[)')) then
+    update public.rental_reschedule_requests set status='conflict',decision_by=v_user,
+      decision_reason='Owner availability block',decided_at=now() where id=p_request_id;
+    return 'conflict';
+  end if;
+  if exists(select 1 from public.copy_reservations x where x.book_copy_id=v_item.book_copy_id
+    and x.booking_id<>v_booking.id and x.status in ('hold','confirmed','in_use')
+    and x.reserved_period&&tstzrange(v_req.new_start_at-v_item.buffer_before,v_req.new_end_at+v_item.buffer_after,'[)')
+    and (x.status<>'hold' or x.expires_at is null or x.expires_at>now())) then
+    update public.rental_reschedule_requests set status='conflict',decision_by=v_user,
+      decision_reason='Another reservation overlaps the requested interval',decided_at=now() where id=p_request_id;
+    return 'conflict';
+  end if;
   select * into v_res from public.copy_reservations where booking_id=v_booking.id and status in ('hold','confirmed') for update;
   begin
     if found then
@@ -729,10 +751,11 @@ begin
   if p_claim_category in ('minor_damage','major_damage','missing_pages','water_damage','wrong_book_returned')
     and not exists(select 1 from public.rental_condition_photos p where p.booking_id=p_booking_id and p.evidence_kind='collection')
   then raise exception 'Initial collection-condition evidence is required before a damage claim'; end if;
-  if p_claim_category='non_return' and v_booking.rental_due_at is not null and now()<v_booking.rental_due_at+interval '24 hours' then
-    raise exception 'Non-return claim cannot be raised before the proposed grace period expires';
-  end if;
   select * into v_cfg from public.rental_operation_policy where id=true;
+  if p_claim_category in ('non_return','lost_book')
+    and (v_booking.rental_due_at is null or now()<=v_booking.rental_due_at+make_interval(hours=>coalesce(v_cfg.grace_period_hours,24))) then
+    raise exception 'Non-return/lost-book claim cannot be raised before the approved grace period expires';
+  end if;
   insert into public.disputes(booking_id,opened_by,against_user_id,status,reason_code,description,policy_version)
   values(p_booking_id,v_user,v_booking.reader_id,'awaiting_reader','rental_claim:'||p_claim_category,
     left(p_description,4000),coalesce(v_cfg.policy_version,'rental_ops_v1')) returning id into v_dispute;
@@ -1050,6 +1073,7 @@ declare
   v_overdue integer:=0;
   v_fee_inserted integer:=0;
   v_notification_id uuid;
+  v_late_fee_id uuid;
   v_day integer;
   v_total bigint;
   v_fee bigint;
@@ -1121,8 +1145,19 @@ begin
           insert into public.late_fees(booking_id,assessed_to,amount_paise,policy_version,reason_code,status,billing_day,assessment_idempotency_key)
           values(v_booking.id,v_booking.reader_id,v_fee,v_cfg.policy_version,'overdue_after_grace','proposed',(p_now at time zone 'Asia/Kolkata')::date,
             'late-fee:'||v_booking.id::text||':'||(p_now at time zone 'Asia/Kolkata')::date::text)
-          on conflict do nothing;
-          if found then v_fee_inserted:=v_fee_inserted+1; end if;
+          on conflict do nothing
+          returning id into v_late_fee_id;
+          if found then
+            v_fee_inserted:=v_fee_inserted+1;
+            insert into public.notifications(user_id,channel,template_key,payload,scheduled_at)
+            values(v_booking.reader_id,'in_app','rental.late_fee_proposed',
+              jsonb_build_object('booking_id',v_booking.id,'late_fee_id',v_late_fee_id,'amount_paise',v_fee,
+                'policy_version',v_cfg.policy_version,'status','proposed'),p_now);
+            insert into public.outbox_events(aggregate_type,aggregate_id,event_type,payload,idempotency_key)
+            values('booking',v_booking.id,'rental_late_fee_proposed',
+              jsonb_build_object('late_fee_id',v_late_fee_id,'amount_paise',v_fee,'status','proposed'),
+              'late-fee-notice:'||v_late_fee_id::text) on conflict(idempotency_key) do nothing;
+          end if;
         end if;
       end if;
     end if;
