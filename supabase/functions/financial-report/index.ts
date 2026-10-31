@@ -31,8 +31,10 @@ function validDate(value: unknown): value is string {
 
 Deno.serve(async (request: Request) => {
   const origin = request.headers.get("Origin") ?? "";
-  const allowed = (Deno.env.get("FINANCE_REPORT_ORIGINS") ?? Deno.env.get("ADMIN_PORTAL_ORIGINS") ?? "")
-    .split(",").map(value => value.trim()).filter(Boolean);
+  const allowed = [
+    Deno.env.get("FINANCE_REPORT_ORIGINS") ?? "",
+    Deno.env.get("ADMIN_PORTAL_ORIGINS") ?? ""
+  ].flatMap(value => value.split(",")).map(value => value.trim()).filter(Boolean);
   const allowedOrigin = origin && allowed.includes(origin) ? origin : "";
   if (request.method === "OPTIONS") {
     if (!allowedOrigin) return json({ error: "origin_not_allowed" },403,"");
