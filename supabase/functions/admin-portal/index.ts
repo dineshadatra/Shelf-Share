@@ -279,6 +279,12 @@ Deno.serve(async (request: Request) => {
         const {data,error}=await admin.storage.from("identity-private").createSignedUrl(doc.object_key,60);
         if(!error && data?.signedUrl) signed.push({id:doc.id,type:doc.document_type,last4:doc.document_last4,status:doc.status,submittedAt:doc.submitted_at,signedUrl:data.signedUrl,expiresInSeconds:60});
       }
+      const {error:sensitiveLogError}=await admin.from("sensitive_data_access_events").insert({
+        actor_id:actorId,subject_user_id:targetUser,data_class:"identity_document",
+        resource_table:"identity_documents",resource_id:targetUser,purpose:reason,
+        outcome:"success",request_id:requestId,metadata:{document_count:signed.length,step_up:"aal2"}
+      });
+      if(sensitiveLogError) throw new Error("sensitive_access_log_failed");
       await activity("identity_documents_opened","verification","identity.documents.read","success",reason,"identity_documents",targetUser,{count:signed.length,stepUp:"aal2"});
       return json({documents:signed,requestId,expiresInSeconds:60,warning:"Private identity material. Do not download or retain outside the approved verification process."},200,allowedOrigin);
     }
