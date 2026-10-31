@@ -320,7 +320,7 @@ export default function RentalHistoryPage(){
   return <MemberLayout title="Rental history">
     <PageHeading eyebrow="YOUR READING JOURNEY" title="Every book leaves a little mark." description="Track rental requests, provider-confirmed payments, handovers, active rentals and returns."/>
     {error&&<Alert tone="error">{error}</Alert>}{notice&&<Alert tone="success">{notice}</Alert>}
-    <div style={{display:"flex",justifyContent:"flex-end"}}><Button variant="outline" size="sm" onClick={()=>void load()}><RefreshCw size={14}/> Refresh server status</Button></div>
+    <div style={{display:"flex",justifyContent:"flex-end"}}><Button variant="outline" size="sm" onClick={()=>void refreshStatus()}><RefreshCw size={14}/> Refresh server status</Button></div>
     {loading?<p>Loading your bookings…</p>:bookings.length===0?<EmptyState icon={<Clock3 size={28}/>} title="Nothing on your reading table yet" description="Your rental requests and completed bookings will appear here."/>:
     <Tabs defaultValue="upcoming">
       <TabsList><TabsTrigger value="upcoming">Requests & upcoming ({upcoming.length})</TabsTrigger><TabsTrigger value="active">Active & return ({active.length})</TabsTrigger><TabsTrigger value="past">Past ({past.length})</TabsTrigger></TabsList>
