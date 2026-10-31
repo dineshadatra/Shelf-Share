@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const state={supabase:null,modules:[],permissions:new Set(),currentModule:"dashboard",page:0,pageSize:25,total:0,rows:[],pendingReason:null};
+const state={supabase:null,projectUrl:null,anonKey:null,modules:[],permissions:new Set(),currentModule:"dashboard",page:0,pageSize:25,total:0,rows:[],pendingReason:null};
 const el=id=>document.getElementById(id);
 const esc=value=>String(value??"").replace(/[&<>"']/gu,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 const fmt=value=>{
@@ -23,6 +23,7 @@ async function sendOtp(){
   const key=el("anonKey").value.trim();
   const phone=el("phone").value.trim();
   if(!/^https:\/\/[a-z0-9.-]+\.supabase\.co$/iu.test(url)||!key||!/^\+[1-9]\d{7,14}$/u.test(phone))throw new Error("Enter a valid project URL, public anon key and international-format staff phone.");
+  state.projectUrl=url;state.anonKey=key;
   state.supabase=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:true}});
   const {error}=await state.supabase.auth.signInWithOtp({phone,options:{shouldCreateUser:false}});
   if(error)throw error;
@@ -46,14 +47,23 @@ async function bootstrap(){
  el("roleBadges").innerHTML=(data.roles||[]).map(role=>"<span>"+esc(role.replaceAll("_"," "))+"</span>").join("");
  renderNavigation();await selectModule("dashboard");
 }
+function availableModules(){
+ const modules=[...state.modules];
+ if(state.permissions.has("support.manage")||state.permissions.has("grievances.manage"))modules.push({key:"support-tickets",label:"Support tickets"});
+ if(state.permissions.has("finance.analytics.read"))modules.push({key:"finance-report",label:"Financial analytics"});
+ return modules;
+}
 function renderNavigation(){
- el("navigation").innerHTML=state.modules.map(module=>'<button type="button" data-module="'+esc(module.key)+'" class="'+(module.key===state.currentModule?"active":"")+'">'+esc(module.label)+"</button>").join("");
+ el("navigation").innerHTML=availableModules().map(module=>'<button type="button" data-module="'+esc(module.key)+'" class="'+(module.key===state.currentModule?"active":"")+'">'+esc(module.label)+"</button>").join("");
  el("navigation").querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>selectModule(button.dataset.module)));
 }
 async function selectModule(key){
- const module=state.modules.find(item=>item.key===key);if(!module)return;
+ const module=availableModules().find(item=>item.key===key);if(!module)return;
  state.currentModule=key;state.page=0;el("pageTitle").textContent=module.label;renderNavigation();
- if(key==="dashboard")await renderDashboard();else await loadModule();
+ if(key==="dashboard")await renderDashboard();
+ else if(key==="support-tickets")await renderSupportTickets();
+ else if(key==="finance-report")await renderFinanceReport();
+ else await loadModule();
 }
 async function renderDashboard(){
  el("content").innerHTML='<div class="notice"><strong>Operational snapshot</strong>Counts are permission-filtered and are not financial statements. Payment counts do not indicate collected or settled money.</div><div id="dashboardCards" class="cards"><div class="card">Loading dashboard…</div></div><div class="section-heading"><div><h2>Your access</h2><p>Access depends on the role permissions currently assigned to your account.</p></div></div><div class="card"><div class="permission-list">'+[...state.permissions].sort().map(item=>"<span>"+esc(item)+"</span>").join("")+"</div></div>';
@@ -191,6 +201,154 @@ async function exportCsv(){
   a.href=url;a.download=data.filename||("shelfshare-"+state.currentModule+".csv");a.click();URL.revokeObjectURL(url);
  }catch(error){alert(error.message||"Export failed.");}
 }
+
+
+async function invokeOperations(action,payload={}){
+ const {data,error}=await state.supabase.functions.invoke("customer-operations",{body:Object.assign({action},payload)});
+ if(error)throw error;
+ if(data?.error)throw new Error(data.error);
+ return data;
+}
+async function callOperationsDownload(endpoint,payload,filename){
+ const {data,error}=await state.supabase.auth.getSession();
+ if(error||!data.session)throw new Error("Your session has expired. Sign in again.");
+ const response=await fetch(state.projectUrl+"/functions/v1/"+endpoint,{
+  method:"POST",
+  headers:{Authorization:"Bearer "+data.session.access_token,apikey:state.anonKey,"Content-Type":"application/json"},
+  body:JSON.stringify(payload)
+ });
+ if(!response.ok){
+  const result=await response.json().catch(()=>({}));
+  throw new Error(result.error||"Download failed.");
+ }
+ const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+}
+async function requestFinanceReport(format){
+ const {data,error}=await state.supabase.auth.getSession();
+ if(error||!data.session)throw new Error("Your session has expired. Sign in again.");
+ const response=await fetch(state.projectUrl+"/functions/v1/financial-report",{
+  method:"POST",
+  headers:{Authorization:"Bearer "+data.session.access_token,apikey:state.anonKey,"Content-Type":"application/json"},
+  body:JSON.stringify({from:el("financeFrom").value,to:el("financeTo").value,format})
+ });
+ if(!response.ok){
+  const result=await response.json().catch(()=>({}));
+  throw new Error(result.error||"Financial report request failed.");
+ }
+ if(format==="csv"){
+  const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");
+  a.href=url;a.download="shelfshare-financial-"+el("financeFrom").value+"-"+el("financeTo").value+".csv";a.click();URL.revokeObjectURL(url);
+  return null;
+ }
+ return response.json();
+}
+function localDateInput(date){
+ return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0");
+}
+function inrFromPaise(value){
+ const amount=Number(value??0)/100;
+ return new Intl.NumberFormat("en-IN",{style:"currency",currency:"INR",maximumFractionDigits:2}).format(amount);
+}
+async function renderFinanceReport(){
+ const now=new Date(),start=new Date(now.getFullYear(),now.getMonth(),1);
+ el("content").innerHTML='<div class="notice"><strong>Finance-only reporting</strong>Amounts are in INR and sourced from recorded payment, commission, refund and operating-cost records. This report is operational analytics, not a statutory tax return or accounting statement. MFA AAL2 is required.</div>'+
+ '<div class="card"><div class="toolbar"><div class="field"><label>From date (IST)</label><input id="financeFrom" type="date" value="'+localDateInput(start)+'"></div><div class="field"><label>To date (IST)</label><input id="financeTo" type="date" value="'+localDateInput(now)+'"></div><button id="loadFinance" class="primary">Load analytics</button><button id="downloadFinance" class="secondary">Download CSV</button></div><p id="financeMessage" class="muted"></p></div>'+
+ '<div id="financeSummary" class="cards" style="margin-top:14px"></div>'+
+ '<div class="section-heading"><div><h2>Daily performance</h2><p>Captured rental value by India business date.</p></div></div><div id="financeDaily" class="table-wrap"></div>'+
+ '<div class="section-heading"><div><h2>Locality performance</h2><p>Paid rentals grouped by physical copy locality.</p></div></div><div id="financeLocality" class="table-wrap"></div>';
+ el("loadFinance").addEventListener("click",loadFinanceAnalytics);
+ el("downloadFinance").addEventListener("click",async()=>{try{await ensureAal2();if(!el("financeFrom").value||!el("financeTo").value)throw new Error("Choose a date range.");await requestFinanceReport("csv");}catch(error){el("financeMessage").textContent=error.message||"Download failed."; }});
+ await loadFinanceAnalytics();
+}
+async function loadFinanceAnalytics(){
+ const message=el("financeMessage");message.textContent="Loading finance metrics…";
+ try{
+  await ensureAal2();
+  if(!el("financeFrom").value||!el("financeTo").value||el("financeTo").value<el("financeFrom").value)throw new Error("Choose a valid date range.");
+  const data=await requestFinanceReport("json"),s=data.summary||{};
+  const metrics=[
+   ["Gross rental transaction value",inrFromPaise(s.gross_rental_transaction_value_paise)],
+   ["Platform commission",inrFromPaise(s.commission_paise)],
+   ["Gateway charges",inrFromPaise(s.gateway_charges_paise)],
+   ["Refunds completed",inrFromPaise(s.refunds_completed_paise)],
+   ["Booked tax",inrFromPaise(s.booked_tax_paise)],
+   ["Net contribution*",inrFromPaise(s.net_contribution_before_other_overheads_paise)],
+   ["Average rental value",inrFromPaise(s.average_rental_value_paise)],
+   ["Repeat rental rate",String(s.repeat_rental_rate_percent??0)+"%"],
+   ["Booking conversion",String(s.booking_conversion_percent??0)+"%"],
+   ["Paid bookings",Number(s.paid_bookings??0).toLocaleString("en-IN")],
+   ["Active books now",Number(s.active_books_now??0).toLocaleString("en-IN")]
+  ];
+  el("financeSummary").innerHTML=metrics.map(([label,value])=>'<div class="card"><div class="metric-label">'+esc(label)+'</div><div class="metric-value finance-value">'+esc(value)+'</div></div>').join("");
+  const daily=data.daily_performance||[];
+  el("financeDaily").innerHTML=daily.length?'<table><thead><tr><th>IST date</th><th>Paid bookings</th><th>Gross rental value</th></tr></thead><tbody>'+daily.map(row=>'<tr><td>'+esc(row.date)+'</td><td>'+Number(row.paid_bookings??0).toLocaleString("en-IN")+'</td><td>'+esc(inrFromPaise(row.gross_rental_value_paise))+'</td></tr>').join("")+'</tbody></table>':'<div class="empty">No captured rentals in this period.</div>';
+  const localities=data.locality_performance||[];
+  el("financeLocality").innerHTML=localities.length?'<table><thead><tr><th>City</th><th>Locality</th><th>Paid bookings</th><th>Gross rental value</th></tr></thead><tbody>'+localities.map(row=>'<tr><td>'+esc(row.city)+'</td><td>'+esc(row.locality)+'</td><td>'+Number(row.paid_bookings??0).toLocaleString("en-IN")+'</td><td>'+esc(inrFromPaise(row.gross_rental_value_paise))+'</td></tr>').join("")+'</tbody></table>':'<div class="empty">No locality data available for this period.</div>';
+  message.textContent="Period: "+data.period.from+" to "+data.period.to+" ("+data.period.timezone+"). *Before other overheads; see metric definitions in the operations guide.";
+ }catch(error){message.textContent=error.message||"Unable to load analytics.";el("financeSummary").innerHTML="";el("financeDaily").innerHTML="";el("financeLocality").innerHTML="";}
+}
+async function renderSupportTickets(){
+ el("content").innerHTML='<div class="notice"><strong>Support operations</strong>Ticket reads are permission-filtered. Internal notes are visible only to authorised support staff. Status/priority/assignment changes require MFA AAL2 and an audit reason.</div>'+
+ '<div class="card"><div class="toolbar"><div class="field"><label>Status</label><select id="supportStatus"><option value="open">Open and active</option><option value="all">All</option><option value="in_progress">In progress</option><option value="waiting_user">Waiting for user</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></div><div class="field"><label>Category</label><select id="supportCategory"><option value="">All categories</option></select></div><div class="field"><label>Priority</label><select id="supportPriority"><option value="">All priorities</option><option>urgent</option><option>high</option><option>normal</option><option>low</option></select></div><div class="field"><label>Assignee UUID</label><input id="supportAssignee" placeholder="Optional staff user ID"></div><button id="loadSupport" class="primary">Apply filters</button><button id="exportSupport" class="secondary">Export CSV</button></div></div>'+
+ '<div id="supportRecords" class="table-wrap" style="margin-top:13px"><div class="empty">Loading support queue…</div></div>'+
+ '<div id="ticketDetail" style="margin-top:15px"></div>';
+ try{
+  const categories=await invokeOperations("support-categories");
+  el("supportCategory").innerHTML='<option value="">All categories</option>'+(categories.categories||[]).map(item=>'<option value="'+esc(item.category_key)+'">'+esc(item.label)+'</option>').join("");
+ }catch(error){el("supportRecords").innerHTML='<div class="empty">'+esc(error.message)+'</div>';return;}
+ el("loadSupport").addEventListener("click",loadSupportQueue);
+ el("exportSupport").addEventListener("click",async()=>{try{await ensureAal2();await callOperationsDownload("customer-operations",{action:"support-export",limit:1000},"shelfshare-support-tickets.csv");}catch(error){alert(error.message||"Export failed.");}});
+ await loadSupportQueue();
+}
+async function loadSupportQueue(){
+ const target=el("supportRecords");
+ target.innerHTML='<div class="empty">Loading tickets…</div>';
+ try{
+  const data=await invokeOperations("support-queue",{
+   status:el("supportStatus").value,category:el("supportCategory").value||undefined,
+   priority:el("supportPriority").value||undefined,assignedTo:el("supportAssignee").value.trim()||undefined,limit:200
+  });
+  const rows=data.tickets||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Ticket</th><th>Category</th><th>Priority</th><th>Status</th><th>Assignee</th><th>First response due</th><th>Resolution due</th><th>SLA breach</th><th>Actions</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td><strong>'+esc(row.ticket_number)+'</strong><br>'+esc(row.subject)+'</td><td>'+esc(row.category)+'</td><td>'+esc(row.priority)+'</td><td>'+esc(row.status)+'</td><td>'+esc(row.assigned_to||"Unassigned")+'</td><td>'+esc(fmt(row.first_response_due_at))+'</td><td>'+esc(fmt(row.resolution_due_at))+'</td><td>'+esc(fmt(row.sla_breached_at))+'</td><td><div class="table-actions"><button class="secondary" data-ticket-view="'+esc(row.id)+'">Open</button><button class="primary" data-ticket-manage="'+esc(row.id)+'" data-ticket-status="'+esc(row.status)+'" data-ticket-priority="'+esc(row.priority)+'" data-ticket-assignee="'+esc(row.assigned_to||"")+'">Manage</button></div></td></tr>').join("")+
+   '</tbody></table>':'<div class="empty">No support tickets match these filters.</div>';
+  target.querySelectorAll("[data-ticket-view]").forEach(button=>button.addEventListener("click",()=>openSupportTicket(button.dataset.ticketView)));
+  target.querySelectorAll("[data-ticket-manage]").forEach(button=>button.addEventListener("click",()=>manageSupportTicket(button.dataset.ticketManage,button.dataset.ticketStatus,button.dataset.ticketPriority,button.dataset.ticketAssignee)));
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load queue.")+'</div>';}
+}
+async function openSupportTicket(ticketId){
+ const panel=el("ticketDetail");panel.innerHTML='<div class="card">Loading ticket conversation…</div>';
+ try{
+  const data=await invokeOperations("ticket-detail",{ticketId});
+  const ticket=data.ticket||{},messages=data.messages||[],history=data.history||[];
+  panel.innerHTML='<div class="card"><div class="section-heading"><div><h2>'+esc(ticket.ticket_number)+" · "+esc(ticket.subject)+'</h2><p>'+esc(ticket.category)+" · "+esc(ticket.priority)+" · "+esc(ticket.status)+'</p></div></div>'+
+   '<p>'+esc(ticket.description)+'</p><h3>Response history</h3><div class="support-thread">'+messages.map(item=>'<article class="support-message"><div><strong>'+esc(item.author_type.replaceAll("_"," "))+'</strong><small>'+esc(fmt(item.created_at))+(item.is_internal?" · internal note":"")+'</small></div><p>'+esc(item.body)+'</p></article>').join("")+'</div>'+
+   '<h3>Ticket activity</h3><div class="support-history">'+history.map(item=>'<p><strong>'+esc(item.event_type.replaceAll("_"," "))+'</strong> · '+esc(fmt(item.created_at))+' · '+esc(item.reason||"")+'</p>').join("")+'</div>'+
+   (ticket.status==="closed"?"":'<label class="support-reply-label">Add reply or internal note<textarea id="supportReply" rows="4" maxlength="5000"></textarea></label><label class="support-check"><input id="supportInternal" type="checkbox"> Internal note (staff only)</label><button id="sendSupportReply" class="primary">Send response</button>')+
+   '</div>';
+  if(el("sendSupportReply"))el("sendSupportReply").addEventListener("click",async()=>{
+   const message=el("supportReply").value.trim(),internal=el("supportInternal").checked;
+   if(!message)throw new Error("Enter a response before sending.");
+   try{await invokeOperations("reply-ticket",{ticketId,message,internal});await openSupportTicket(ticketId);await loadSupportQueue();}catch(error){alert(error.message||"Response failed.");}
+  });
+ }catch(error){panel.innerHTML='<div class="card">'+esc(error.message||"Unable to open ticket.")+'</div>';}
+}
+function manageSupportTicket(ticketId,currentStatus,currentPriority,currentAssignee){
+ askReason("Manage support ticket","Choose the next status and priority, assign a support staff user, and record an audit reason.",async reason=>{
+  await ensureAal2();
+  const status=prompt("Status: open, in_progress, waiting_user, resolved, closed",currentStatus);
+  if(!status)return;
+  const priority=prompt("Priority: low, normal, high, urgent",currentPriority);
+  if(!priority)return;
+  const assignedTo=prompt("Assignee user UUID (leave blank to unassign)",currentAssignee||"");
+  if(assignedTo===null)return;
+  await invokeOperations("manage-ticket",{ticketId,status,priority,assignedTo:assignedTo.trim()||null,reason});
+  await loadSupportQueue();
+  await openSupportTicket(ticketId);
+ });
+}
+
 el("sendOtp").addEventListener("click",sendOtp);
 el("verifyOtp").addEventListener("click",verifyOtp);
 el("logout").addEventListener("click",async()=>{await state.supabase.auth.signOut();location.reload();});
