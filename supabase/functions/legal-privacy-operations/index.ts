@@ -343,7 +343,7 @@ Deno.serve(async (request: Request) => {
           p_sms_marketing_enabled: marketingEnabled,
           p_email_enabled: existing.email_enabled === true,
           p_push_enabled: existing.push_enabled === true,
-          p_consent_source: "privacy_workflow",
+          p_consent_source: source,
           p_consent_version: noticeVersion
         });
         if (preferenceError) throw preferenceError;
@@ -493,6 +493,21 @@ Deno.serve(async (request: Request) => {
       });
       if (error) throw error;
       return json({ approvalRequestId: data }, 201, allowedOrigin);
+    }
+
+    if (action === "legal-record-counsel-review") {
+      await requirePermission("legal.publish.request"); requireAal2();
+      const id = uuidValue(body.documentId, "document_id");
+      const counselName = textValue(body.counselName, "counsel_name", 3, 160);
+      const reviewReference = textValue(body.reviewReference, "review_reference", 3, 200);
+      const reviewedAt = textValue(body.reviewedAt, "reviewed_at", 20, 40);
+      const reason = textValue(body.reason, "reason", 20, 2000);
+      const { error } = await actorClient.rpc("admin_record_legal_counsel_review", {
+        p_document_id: id, p_counsel_name: counselName, p_review_reference: reviewReference,
+        p_reviewed_at: reviewedAt, p_reason: reason
+      });
+      if (error) throw error;
+      return json({ recorded: true }, 200, allowedOrigin);
     }
 
     if (action === "legal-publish") {
