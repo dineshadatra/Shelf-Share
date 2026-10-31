@@ -256,6 +256,27 @@ Deno.serve(async (request: Request) => {
       await logSensitive("privacy_request","privacy_data_export",actorId,actorId,
         "User downloaded their own personal data export","success",
         {booking_count:bookings?.length??0,payment_count:payments.length,deposit_count:deposits.length});
+      if(body.requestId){
+        const accessRequestId=uuidValue(body.requestId,"request_id");
+        const {data:accessRequest,error:accessRequestError}=await admin.from("privacy_requests")
+          .select("id,request_type,status").eq("id",accessRequestId).eq("requester_id",actorId).maybeSingle();
+        if(accessRequestError||!accessRequest||!["access","portability"].includes(accessRequest.request_type)||
+          !["received","identity_check","in_progress"].includes(accessRequest.status)){
+          throw new Error("matching_open_access_request_required");
+        }
+        const {error:updateError}=await admin.from("privacy_requests").update({
+          status:"fulfilled",completed_at:new Date().toISOString(),
+          resolution_summary:"Personal data export was made available to the authenticated requester through a no-store download.",
+          updated_at:new Date().toISOString()
+        }).eq("id",accessRequestId);
+        if(updateError)throw updateError;
+        const {error:eventError}=await admin.from("privacy_request_events").insert({
+          privacy_request_id:accessRequestId,actor_id:actorId,event_type:"fulfilled",
+          old_status:accessRequest.status,new_status:"fulfilled",
+          public_message:"Your account data export was made available to you as an authenticated download."
+        });
+        if(eventError)throw eventError;
+      }
       const payload={
         export_generated_at:new Date().toISOString(),
         auth_account:{email:authUserData?.user?.email??null,phone:authUserData?.user?.phone??null,created_at:authUserData?.user?.created_at??null},
