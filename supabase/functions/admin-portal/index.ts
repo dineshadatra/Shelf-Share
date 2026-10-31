@@ -13,7 +13,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SEARCH_DATE = /^\d{4}-\d{2}-\d{2}T/u;
 const APPROVAL_ACTIONS = new Set([
   "refund.execute","payout.execute","deposit.release","dispute.finalize",
-  "pricing.publish","valuation.publish","legal.publish","risk.resolve","user.suspend"
+  "pricing.publish","valuation.publish","legal.publish","risk.resolve","user.suspend","privacy.erase"
 ]);
 const REFERENCE_POLICIES: Record<string, { table: string; permission: string; fields: string[]; columns: string }> = {
   categories: { table:"categories", permission:"geography.manage", fields:["slug","name","description","parent_id","is_active"], columns:"id,slug,name,description,parent_id,is_active,created_at" },
@@ -227,7 +227,8 @@ Deno.serve(async (request: Request) => {
           "valuation.publish":["valuation.publish.request","valuation.publish.approve"],
           "legal.publish":["legal.publish.request","legal.publish.approve"],
           "risk.resolve":["risk.resolve.request","risk.resolve.approve"],
-          "user.suspend":["users.suspend.request","users.suspend.approve"]
+          "user.suspend":["users.suspend.request","users.suspend.approve"],
+          "privacy.erase":["privacy.erase.request","privacy.erase.approve"]
         };
         const visibleActions:string[]=[];
         for(const [key,permissions] of Object.entries(actionPermissions)){
