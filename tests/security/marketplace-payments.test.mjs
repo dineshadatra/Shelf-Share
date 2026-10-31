@@ -262,6 +262,7 @@ test("provider-held deposits require a persistent provider reference before show
 
 test("requested financial and marketplace failure scenarios have server-side guards", () => {
   const createBooking = functionBody(booking, "public.request_book_booking(");
+  const eligibility = functionBody(booking, "private.assert_booking_request_identity(");
   const paymentEvent = functionBody(booking, "public.apply_verified_payment_event(");
   const workspaceFn = functionBody(workspace, "public.get_my_booking_workspace(");
   const refundEvent = functionBody(finance, "public.apply_verified_refund_event(");
@@ -298,7 +299,8 @@ test("requested financial and marketplace failure scenarios have server-side gua
   assert.match(chargeback, /p_result not in \('won','lost'\)/);
 
   // Cross-city and Owner no-show rules are server-side, not frontend filters.
-  assert.match(createBooking, /Cross-city rentals are not permitted/);
+  assert.match(eligibility, /Cross-city rentals are not permitted/);
+  assert.match(createBooking, /private\.assert_booking_request_identity/);
   assert.match(incident, /owner_no_show/);
   assert.match(incident, /v_user<>v_booking\.reader_id/);
 });
