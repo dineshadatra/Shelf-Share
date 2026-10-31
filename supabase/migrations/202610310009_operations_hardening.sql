@@ -101,20 +101,22 @@ declare
   v_repeat numeric:=0; v_conversion numeric:=0; v_average numeric:=0; v_active_books bigint:=0;
   v_total_requests bigint:=0; v_paid_requests bigint:=0; v_completed_readers bigint:=0;
   v_repeat_readers bigint:=0; v_localities jsonb:='[]'::jsonb; v_daily jsonb:='[]'::jsonb;
-  v_net bigint:=0;
+  v_net bigint:=0; v_from timestamptz; v_to timestamptz;
 begin
   if auth.uid() is null or not public.admin_has_permission('finance.analytics.read')
     or coalesce(auth.jwt()->>'aal','aal1')<>'aal2' then raise exception 'Finance analytics permission and MFA AAL2 required'; end if;
   if p_from is null or p_to is null or p_to<p_from or p_to-p_from>366 then
     raise exception 'Report date range must be between 1 and 367 calendar days';
   end if;
+  v_from:=p_from::timestamp at time zone 'Asia/Kolkata';
+  v_to:=(p_to+1)::timestamp at time zone 'Asia/Kolkata';
 
   with paid as (
     select b.id,b.reader_id,b.city_id,b.rent_subtotal_paise,b.tax_paise,
       min(p.captured_at) as captured_at
     from public.bookings b join public.payments p on p.booking_id=b.id
     where p.status::text in ('captured','partially_refunded','refunded')
-      and p.captured_at>=p_from::timestamptz and p.captured_at<(p_to+1)::timestamptz
+      and p.captured_at>=v_from and p.captured_at<v_to
     group by b.id,b.reader_id,b.city_id,b.rent_subtotal_paise,b.tax_paise
   )
   select coalesce(sum(rent_subtotal_paise),0),count(*),coalesce(sum(tax_paise),0)
@@ -122,44 +124,44 @@ begin
 
   select coalesce(sum(cl.commission_paise),0) into v_commission
   from public.commission_ledger cl
-  where cl.created_at>=p_from::timestamptz and cl.created_at<(p_to+1)::timestamptz;
+  where cl.created_at>=v_from and cl.created_at<v_to;
 
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_gateway from public.financial_cost_entries c
-  where c.cost_category='gateway_charge' and c.occurred_at>=p_from::timestamptz
-    and c.occurred_at<(p_to+1)::timestamptz;
+  where c.cost_category='gateway_charge' and c.occurred_at>=v_from
+    and c.occurred_at<v_to;
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_sms from public.financial_cost_entries c
-  where c.cost_category='sms' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
+  where c.cost_category='sms' and c.occurred_at>=v_from and c.occurred_at<v_to;
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_verification from public.financial_cost_entries c
-  where c.cost_category='verification' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
+  where c.cost_category='verification' and c.occurred_at>=v_from and c.occurred_at<v_to;
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_referral_ops from public.financial_cost_entries c
-  where c.cost_category='referral' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
+  where c.cost_category='referral' and c.occurred_at>=v_from and c.occurred_at<v_to;
   select coalesce(sum(reward_value_paise),0) into v_referral_rewards
   from public.referral_rewards where status='issued'
-    and issued_at>=p_from::timestamptz and issued_at<(p_to+1)::timestamptz;
+    and issued_at>=v_from and issued_at<v_to;
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_support from public.financial_cost_entries c
-  where c.cost_category='support' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
+  where c.cost_category='support' and c.occurred_at>=v_from and c.occurred_at<v_to;
   select coalesce(sum(amount_paise),0) into v_refunds
   from public.refunds where status='succeeded'
-    and completed_at>=p_from::timestamptz and completed_at<(p_to+1)::timestamptz;
+    and completed_at>=v_from and completed_at<v_to;
 
   select count(*) into v_total_requests from public.bookings
-    where created_at>=p_from::timestamptz and created_at<(p_to+1)::timestamptz;
+    where created_at>=v_from and created_at<v_to;
   select count(distinct b.id) into v_paid_requests
   from public.bookings b join public.payments p on p.booking_id=b.id
-  where b.created_at>=p_from::timestamptz and b.created_at<(p_to+1)::timestamptz
+  where b.created_at>=v_from and b.created_at<v_to
     and p.status::text in ('captured','partially_refunded','refunded') and p.captured_at is not null;
   v_conversion:=case when v_total_requests=0 then 0 else round((v_paid_requests::numeric/v_total_requests)*100,2) end;
   v_average:=case when v_paid_count=0 then 0 else round(v_gross::numeric/v_paid_count,2) end;
 
   with readers as (
     select reader_id,count(*) as rentals from public.bookings
-    where status='completed' and completed_at>=p_from::timestamptz
-      and completed_at<(p_to+1)::timestamptz group by reader_id
+    where status='completed' and completed_at>=v_from
+      and completed_at<v_to group by reader_id
   )
   select count(*) filter(where rentals>=2),count(*) into v_repeat_readers,v_completed_readers from readers;
   v_repeat:=case when v_completed_readers=0 then 0 else round((v_repeat_readers::numeric/v_completed_readers)*100,2) end;
@@ -174,7 +176,7 @@ begin
     join public.book_copies cp on cp.id=ri.book_copy_id
     where exists(select 1 from public.payments p where p.booking_id=b.id
       and p.status::text in ('captured','partially_refunded','refunded')
-      and p.captured_at>=p_from::timestamptz and p.captured_at<(p_to+1)::timestamptz)
+      and p.captured_at>=v_from and p.captured_at<v_to)
   )
   select coalesce(jsonb_agg(jsonb_build_object(
     'locality_id',l.id,'locality',l.name,'city',c.name,
@@ -192,10 +194,10 @@ begin
   join public.cities c on c.id=x.city_id;
 
   with paid_daily as (
-    select b.id,b.rent_subtotal_paise,min(p.captured_at)::date as metric_day
+    select b.id,b.rent_subtotal_paise,min(p.captured_at at time zone 'Asia/Kolkata')::date as metric_day
     from public.bookings b join public.payments p on p.booking_id=b.id
     where p.status::text in ('captured','partially_refunded','refunded')
-      and p.captured_at>=p_from::timestamptz and p.captured_at<(p_to+1)::timestamptz
+      and p.captured_at>=v_from and p.captured_at<v_to
     group by b.id,b.rent_subtotal_paise
   )
   select coalesce(jsonb_agg(jsonb_build_object('date',metric_day,'gross_rental_value_paise',gross_paise,
@@ -207,7 +209,7 @@ begin
 
   v_net:=v_commission-v_gateway-v_sms-v_verification-v_referral_ops-v_referral_rewards-v_support;
   return jsonb_build_object(
-    'period',jsonb_build_object('from',p_from,'to',p_to,'timezone','UTC'),
+    'period',jsonb_build_object('from',p_from,'to',p_to,'timezone','Asia/Kolkata'),
     'summary',jsonb_build_object(
       'gross_rental_transaction_value_paise',v_gross,'paid_bookings',v_paid_count,
       'commission_paise',v_commission,'gateway_charges_paise',v_gateway,
