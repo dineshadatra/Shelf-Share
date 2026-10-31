@@ -46,15 +46,16 @@ export default function BookDetailsPage(){
 
   useEffect(()=>{
     let active=true;
-    if(!supabase||!id){setLoading(false);return;}
-    supabase.functions.invoke("catalogue-api",{body:{action:"listing_detail",copy_id:id}})
+    const client=supabase;
+    if(!client||!id){setLoading(false);return;}
+    client.functions.invoke("catalogue-api",{body:{action:"listing_detail",copy_id:id}})
       .then(async({data,error:invokeError})=>{
         if(!active)return;
         if(invokeError){setError(invokeError.message);return;}
         setDetail(data as Detail);
         const city=(data as Detail)?.copy?.city_id;
         if(city){
-          const {data:points,error:pointError}=await supabase.from("handover_locations")
+          const {data:points,error:pointError}=await client.from("handover_locations")
             .select("id,name,public_address").eq("city_id",city).eq("status","active").order("name");
           if(active){
             if(pointError)setError("Unable to load approved public handover points.");
@@ -108,7 +109,7 @@ export default function BookDetailsPage(){
     }
     const startAt=calendarStart(from);
     const endAt=calendarStart(addDays(until,1));
-    const {data,error:bookingError}=await supabase.functions.invoke("marketplace-api",{body:{
+    const {error:bookingError}=await supabase.functions.invoke("marketplace-api",{body:{
       action:"request_booking",copy_id:detail.copy.id,handover_location_id:locationId,
       start_at:startAt,end_at:endAt,duration_days:duration,
       idempotency_key:"ss-booking-"+crypto.randomUUID(),
