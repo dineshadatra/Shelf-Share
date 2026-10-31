@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture, handoverFinality] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -22,7 +22,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql"),
   read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql"),
   read("../../supabase/migrations/202610300028_member_financial_serialization.sql"),
-  read("../../supabase/migrations/202610300029_late_capture_refunds_and_chargeback_deposit_gate.sql")
+  read("../../supabase/migrations/202610300029_late_capture_refunds_and_chargeback_deposit_gate.sql"),
+  read("../../supabase/migrations/202610300030_handover_rotation_and_financial_finality.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -345,6 +346,27 @@ test("late capture recovery queues one full refund and provider worker executes 
   assert.match(worker, /queue_captured_payment_refund/);
   assert.match(worker, /auto-capture-refund/);
   assert.match(lateCapture, /payment_disputes/);
+});
+
+test("late capture refund requests are executed by the idempotent worker and deposit release reads the current request ID", () => {
+  assert.match(lateCapture, /queue_captured_payment_refund/);
+  assert.match(worker, /refund_after_unreserved_capture/);
+  assert.match(worker, /refund_after_inventory_conflict/);
+  assert.match(worker, /queue_captured_payment_refund/);
+  assert.match(worker, /payload\.release_request_id \?\? payload\.request_id/);
+  assert.match(lateCapture, /payment_disputes/);
+});
+
+test("collection handover QR can be reissued only before scan and tax cannot change after checkout starts", () => {
+  const createHandover = functionBody(handoverFinality, "public.create_handover_session_secure(");
+  const tax = functionBody(handoverFinality, "public.record_booking_tax_calculation(");
+  assert.match(createHandover, /'confirmed','collection_pending'/);
+  assert.match(createHandover, /qr_consumed_at is not null/);
+  assert.match(createHandover, /qr_consumed_at is null/);
+  assert.match(createHandover, /lock_marketplace_members/);
+  assert.match(tax, /v_booking\.status<>'owner_accepted'/);
+  assert.match(tax, /exists\(select 1 from public\.payments/);
+  assert.match(handoverFinality, /p_tax_withheld_paise is null/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
