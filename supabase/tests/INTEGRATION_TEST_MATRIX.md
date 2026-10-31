@@ -62,3 +62,49 @@ The migrations include the GiST exclusion constraint for overlapping live reserv
 ## Provider sandbox tests
 
 Do not use a real-money account. The chosen provider adapter must have written approval for ShelfShare's exact marketplace model. Verify signature validation, idempotency, canonical payment lookup, refund status, payout status, chargebacks, settlement reports and late/out-of-order webhook behaviour. Never infer provider success from an HTTP 200 intent response or browser redirect.
+
+## Notifications, support and financial analytics
+
+Run these after applying migrations 202610310008 through 202610310012 in a disposable Supabase project. Use provider mocks, never real customer phone numbers or live SMS credentials.
+
+| Scenario | Setup / fault injection | Required assertion |
+|---|---|---|
+| OTP isolation | Request Supabase Auth phone OTP | Auth owns delivery; OTP value never appears in notifications, event payloads, delivery jobs or logs |
+| Default preferences | Create a new auth user | In-app enabled; service/marketing SMS, email and push disabled |
+| Consent provenance | Enable SMS without source/version | RPC rejects |
+| Separate service/marketing consent | Enable only service SMS | Service notifications can queue; community/marketing notifications cannot |
+| Consent revoke before send | Queue SMS, revoke preference, then run dispatcher | Job remains cancelled and gateway receives no request |
+| Consent race | Pause worker before its pre-send check, revoke consent, resume worker | notification_delivery_job_sendable returns false; gateway receives no request |
+| Unconfirmed phone | Opt into SMS without a confirmed auth phone | No delivery job is claimed |
+| DLT template disabled | Enable user consent but leave template disabled or missing PE/header/content ID | No SMS job is queued or sent |
+| DLT variable injection | Put unapproved variable, OTP-like variable, newline or markup in payload | Template renderer rejects delivery |
+| Provider retry | Mock 5xx/timeouts and run worker repeatedly | Backoff applied; max attempts dead-letter; no duplicate job |
+| Provider success | Return provider reference and actual costPaise | Job marked sent; provider reference stored; one SMS cost entry |
+| Missing provider cost | Return success without costPaise | No fabricated SMS cost is inserted |
+| Duplicate domain event | Replay same booking/payment/dispute event transition | One event per dedupe key and no duplicate channel delivery |
+| Verification resubmission | Move rejected/needs_resubmission verification back to pending | Applicant and active verification reviewers are notified |
+| Community notification | Comment on another user's published post | Post author notified; no author self-notification; drafts do not trigger activity |
+| Handover notifications | Complete collection and return handover sessions | Both reader and owner notified with correct handover/return event |
+| Booking notifications | Insert, accept and decline booking requests | Owner receives request; reader receives accepted/rejected outcome |
+| Support ticket creation | Create ticket using an inactive/unknown category | Rejected; valid category creates one ticket, first message and history entry |
+| Support ticket privacy | Request another user's ticket/messages as a customer | RLS denies access; internal notes are never visible to requesters |
+| Internal note | Requester attempts internal note | Rejected; support staff can add internal note |
+| Assignment permissions | Assign ticket to inactive/non-support user | Rejected |
+| Status workflow | Move open -> in_progress -> waiting_user -> resolved -> closed | Every transition recorded; timestamps set; closed ticket cannot receive replies |
+| Resolution reply | Staff sends public resolution reply then resolves ticket | Requester gets update; public response visible; history records resolution |
+| SLA first response | Advance test clock beyond first response due | Ticket marked breached/escalated and priority increased |
+| SLA resolution | Advance test clock beyond resolution due | Ticket escalated once and internal system note recorded |
+| Finance role separation | Read finance analytics as admin/support agent | Permission denied |
+| Finance MFA | Read analytics or record cost without AAL2 | Permission denied |
+| Finance period boundaries | Capture transactions around local midnight on either boundary | Included according to Asia/Kolkata calendar date |
+| GTV and refunds | Capture rent, separately collect deposit, then refund part | GTV excludes deposit and booked tax; refund shown separately |
+| Cost evidence | Record gateway/verification/referral/support cost without reason/source/idempotency | Rejected |
+| Cost idempotency | Replay same cost idempotency key | Same single entry; no duplicate expense |
+| Cost reversal | Reverse same cost twice | Second reversal rejected; report nets the dated reversal |
+| Referral issue-time | Create reward then issue it on another date | Report assigns reward expenditure to issued_at, not original creation date |
+| Conversion/repeat | Create requests and captures in different date cohorts; complete repeat rentals | Ratios match documented numerator/denominator and date basis |
+| Locality report | Capture rentals for physical copies in different localities | Each booking groups under the copy locality and city |
+| CSV formula injection | Include strings starting with =, +, - or @ in a report value | Export prefixes formula-like cells and quotes all CSV fields |
+| Finance report privacy | Download report with multiple customers | CSV contains only aggregate values, no names, phones, emails or user IDs |
+
+The initial support SLA values in the migration are proposed defaults only. Validate the configured thresholds with the support owner before publishing them as customer-facing service commitments. DLT, consent and message-category checks must be approved with the chosen telecom provider and Indian legal counsel before enabling any SMS template.
