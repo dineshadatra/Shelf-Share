@@ -95,7 +95,7 @@ create table if not exists public.privacy_consent_events (
   id bigint generated always as identity primary key,
   user_id uuid not null references auth.users(id) on delete restrict,
   purpose_key text not null check (purpose_key in (
-    'marketing_communications','product_analytics','personalised_recommendations',
+    'service_sms','marketing_communications','product_analytics','personalised_recommendations',
     'nonessential_cookies','referral_invitations'
   )),
   action text not null check (action in ('granted','withdrawn')),
@@ -538,7 +538,7 @@ as $$
 declare v_actor uuid:=auth.uid(); v_id bigint;
 begin
   if v_actor is null then raise exception 'Authentication required'; end if;
-  if p_purpose_key not in ('marketing_communications','product_analytics','personalised_recommendations','nonessential_cookies','referral_invitations')
+  if p_purpose_key not in ('service_sms','marketing_communications','product_analytics','personalised_recommendations','nonessential_cookies','referral_invitations')
     or p_action not in ('granted','withdrawn') or p_source not in ('web','ios','android')
     or length(btrim(coalesce(p_notice_version,''))) not between 1 and 40 then
     raise exception 'Invalid consent update';
@@ -723,6 +723,9 @@ begin
       and r.status='in_progress' and not r.legal_hold
       and not exists(select 1 from public.privacy_legal_holds h
         where h.subject_user_id=j.subject_user_id and h.released_at is null)
+      and not exists(select 1 from public.bookings b
+        where (b.reader_id=j.subject_user_id or b.owner_id=j.subject_user_id)
+          and b.status::text not in ('completed','cancelled','expired'))
     order by j.created_at limit greatest(1,least(p_limit,50)) for update of j skip locked
   )
   update public.privacy_erasure_jobs j set status='processing',attempts=attempts+1,started_at=now()
