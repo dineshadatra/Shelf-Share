@@ -57,6 +57,14 @@ export default function RentalHistoryPage(){
   const [busyId,setBusyId]=useState<string|null>(null);
   const [error,setError]=useState("");
   const [notice,setNotice]=useState("");
+  const [currentTime,setCurrentTime]=useState(0);
+
+  useEffect(()=>{
+    const refreshClock=()=>setCurrentTime(Date.now());
+    refreshClock();
+    const interval=window.setInterval(refreshClock,1000);
+    return ()=>window.clearInterval(interval);
+  },[]);
 
   const load=useCallback(async()=>{
     if(!supabase){setLoading(false);return;}
@@ -185,7 +193,7 @@ export default function RentalHistoryPage(){
   const renderHandover=(booking:Booking)=>{
     const session=booking.active_handover;
     const secret=secrets[booking.id];
-    const sessionCurrent=Boolean(session&&session.status!=="completed"&&Date.parse(session.expires_at)>Date.now());
+    const sessionCurrent=Boolean(session&&session.status!=="completed"&&Date.parse(session.expires_at)>currentTime);
     const isInitiator=Boolean(session&&user?.id===session.initiator_id);
     const myPhotos=session?(booking.is_reader?session.reader_photo_count:session.owner_photo_count):0;
     const otherPhotos=session?(booking.is_reader?session.owner_photo_count:session.reader_photo_count):0;
@@ -206,7 +214,7 @@ export default function RentalHistoryPage(){
           <span>Reader photos: <b>{session!.reader_photo_count}</b></span>
         </div>
         <p className="muted">QR expires {dateTime(session!.expires_at)}. Each participant must confirm independently and upload at least one condition photo.</p>
-        {isInitiator&&secret?.sessionId===session!.id&&Date.parse(secret.expiresAt)>Date.now()&&<div style={{display:"grid",justifyItems:"center",gap:".5rem"}}>
+        {isInitiator&&secret?.sessionId===session!.id&&Date.parse(secret.expiresAt)>currentTime&&<div style={{display:"grid",justifyItems:"center",gap:".5rem"}}>
           <QRCodeSVG value={secret.token} size={220} level="H" includeMargin/>
           <strong>One-time handover QR</strong>
           <p className="muted">Show this only to the other booking participant.</p>
