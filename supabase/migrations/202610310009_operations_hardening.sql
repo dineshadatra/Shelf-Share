@@ -139,7 +139,7 @@ begin
   where c.cost_category='referral' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
   select coalesce(sum(reward_value_paise),0) into v_referral_rewards
   from public.referral_rewards where status='issued'
-    and created_at>=p_from::timestamptz and created_at<(p_to+1)::timestamptz;
+    and issued_at>=p_from::timestamptz and issued_at<(p_to+1)::timestamptz;
   select coalesce(sum(case when c.reverses_entry_id is null then c.amount_paise else -c.amount_paise end),0)
     into v_support from public.financial_cost_entries c
   where c.cost_category='support' and c.occurred_at>=p_from::timestamptz and c.occurred_at<(p_to+1)::timestamptz;
