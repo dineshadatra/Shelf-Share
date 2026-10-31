@@ -36,8 +36,8 @@ Set secrets with supabase secrets set; never commit a .env file.
 - financial-report requires a finance_operator permission and MFA AAL2. It generates a CSV download from the aggregate finance analytics RPC without customer identifiers.
 
 Required additional secrets:
-- APP_ORIGIN or CUSTOMER_APP_ORIGINS (exact HTTPS customer frontend origins)
-- FINANCE_REPORT_ORIGINS (exact HTTPS origins allowed to download reports)
+- APP_ORIGIN, CUSTOMER_APP_ORIGINS and/or ADMIN_PORTAL_ORIGINS (exact HTTPS customer/admin frontend origins; allowlists are combined)
+- FINANCE_REPORT_ORIGINS (exact HTTPS origins allowed to preview/download finance reports; combined with ADMIN_PORTAL_ORIGINS)
 - NOTIFICATION_DISPATCH_SECRET (at least 32 characters)
 - SMS_GATEWAY_URL (HTTPS; provider-specific endpoint)
 - SMS_GATEWAY_API_KEY
