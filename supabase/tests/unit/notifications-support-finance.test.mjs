@@ -84,4 +84,7 @@ test("migration contains restricted delivery, consent, support SLA and finance g
   assert.match(controls, /reverse_financial_cost_entry/u);
   assert.match(contentAndCoverage, /collection_pending/u);
   assert.match(backfill, /verification-submitted-reviewer/u);
+  assert.match(migration, /auth\.jwt\(\)->>'role'/u);
+  assert.match(migration, /issued_at timestamptz/u);
+  assert.match(hardening, /issued_at>=p_from/u);
 });
