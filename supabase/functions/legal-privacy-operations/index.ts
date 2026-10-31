@@ -154,8 +154,18 @@ Deno.serve(async (request: Request) => {
       if (acceptanceError) throw acceptanceError;
       const accepted = new Map((acceptances ?? []).map((item: { legal_document_id: string; document_sha256: string }) =>
         [item.legal_document_id + ":" + item.document_sha256, true]));
-      return json({ documents: current.map((doc: { id: string; sha256: string; requires_acceptance: boolean }) => ({
-        ...doc, accepted: accepted.has(doc.id + ":" + doc.sha256)
+      const acceptedDocumentIds=[...new Set((acceptances??[]).map((item:{legal_document_id:string})=>item.legal_document_id))];
+      let acceptedPriorTypes=new Set<string>();
+      if(acceptedDocumentIds.length){
+        const {data:priorDocs,error:priorError}=await admin.from("legal_documents")
+          .select("id,document_type").in("id",acceptedDocumentIds);
+        if(priorError)throw priorError;
+        acceptedPriorTypes=new Set((priorDocs??[]).map((item:{document_type:string})=>item.document_type));
+      }
+      return json({ documents: current.map((doc: { id: string; document_type:string; sha256: string; requires_acceptance: boolean; reacceptance_required:boolean }) => ({
+        ...doc,
+        accepted:!doc.requires_acceptance || accepted.has(doc.id + ":" + doc.sha256) ||
+          (!doc.reacceptance_required && acceptedPriorTypes.has(doc.document_type))
       })) }, 200, allowedOrigin);
     }
 
