@@ -177,7 +177,7 @@ The worker is `supabase/functions/marketplace-outbox/index.ts`. It leases events
 
 ## 11. Deployment sequence and environment
 
-Apply the database migrations in numeric order through `202610300030_handover_rotation_and_financial_finality.sql` in a staging Supabase project first. Deploy both Edge Functions with the project's supported Supabase CLI:
+Apply the database migrations in numeric order through `202610300031_deposit_position_pending_booking_guard.sql` in a staging Supabase project first. Deploy both Edge Functions with the project's supported Supabase CLI:
 
 - `supabase functions deploy marketplace-api --no-verify-jwt`
 - `supabase functions deploy marketplace-outbox --no-verify-jwt`
