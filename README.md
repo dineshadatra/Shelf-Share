@@ -4,10 +4,10 @@ This repository contains ShelfShare's PostgreSQL/Supabase schema, business rules
 
 ## Repository contents
 
-- `docs/` — architecture, product rules, privacy/security, India compliance dependencies, database design, rental lifecycle/dispute/safety policies and operations.
+- `docs/` — architecture, product rules, privacy/security, India compliance dependencies, database design, rental lifecycle/dispute/safety policies, admin operations and notifications/support/finance analytics.
 - `supabase/migrations/` — ordered PostgreSQL/Supabase migrations.
-- `supabase/functions/` — Edge Functions for payment initiation/webhooks, QR/OTP handover, private evidence, rental lifecycle operations, dispute evidence, due reminders, owner settlement requests, deposit release requests and finance refund requests.
-- `supabase/tests/unit/` — runnable Node.js unit tests for financial, handover and rental-operations invariants.
+- `supabase/functions/` — Edge Functions for payment initiation/webhooks, QR/OTP handover, private evidence, rental lifecycle, notifications/SMS delivery, customer support, due/SLA sweeps, finance reports and existing finance requests.
+- `supabase/tests/unit/` — runnable Node.js unit tests for financial, handover, rental-operations, admin-portal, notification, support and CSV-export invariants.
 - `supabase/tests/INTEGRATION_TEST_MATRIX.md` — database/provider sandbox test scenarios.
 
 ## Local setup
@@ -62,6 +62,13 @@ The Edge Functions are backend scaffolding over the existing SQL RPCs. They do n
 
 A separate staff-only console is available in the admin/ directory. It calls the JWT-protected admin-portal Edge Function and uses database-enforced role permissions. The six staff roles separate support, verification review, moderation, finance, general administration and super-admin duties. Identity document access is limited to verification reviewers with MFA AAL2; financial tables are restricted to the finance_operator role. Selected high-risk actions use maker-checker approvals, and admin activity is recorded in an append-only log.
 
-See docs/ADMIN_PORTAL.md for module coverage, deployment configuration and release limitations. Apply the two new migrations 202610310006_admin_portal_rbac.sql and 202610310007_admin_security_hardening.sql in lexical order after the existing migrations. Host the admin/ directory separately over HTTPS and configure ADMIN_PORTAL_ORIGINS for its exact origin.
+See docs/ADMIN_PORTAL.md for staff module coverage and docs/NOTIFICATIONS_SUPPORT_FINANCIAL_ANALYTICS.md for notification delivery, support/SLA, DLT and financial reporting details. Apply migrations 202610310006_admin_portal_rbac.sql through 202610310010_operations_controls.sql in lexical order after the existing migrations. Host the admin/ directory separately over HTTPS and configure ADMIN_PORTAL_ORIGINS for its exact origin.
 
 The portal is a first operational foundation: it includes permission-filtered module views, filters, search, pagination, limited CSV export, manual verification, selected moderation, and approval workflows. Several specialised edit/fulfilment workflows and all provider-side financial execution still require additional integration and staging validation.
+
+
+## Notifications, support and financial analytics
+
+The notifications/support/financial analytics backend adds event-driven in-app notifications, opt-in SMS preferences and a DLT-gated delivery outbox, support tickets with response history and SLA escalation, and MFA-protected financial analytics CSV exports. SMS remains disabled until ShelfShare has completed Principal Entity registration, registered headers/templates, consent configuration and a tested provider-specific gateway adapter. Email and push adapters are not enabled. See docs/NOTIFICATIONS_SUPPORT_FINANCIAL_ANALYTICS.md for exact event coverage, deployment secrets, DLT gates, SLA defaults, metric definitions and known limits.
+
+Apply migrations 202610310008_notifications_support_financial_analytics.sql, 202610310009_operations_hardening.sql and 202610310010_operations_controls.sql after migrations 006 and 007. Run npm run test:unit, Supabase migration lint and disposable-database/RLS integration tests before production.
