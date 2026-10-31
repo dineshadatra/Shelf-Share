@@ -63,3 +63,9 @@ verify_jwt = false
 
 [functions.financial-report]
 verify_jwt = true
+
+[functions.legal-privacy-operations]
+verify_jwt = true
+
+[functions.privacy-erasure-worker]
+verify_jwt = false
