@@ -41,23 +41,47 @@ begin
       raise exception 'Unsupported reconciliation record';
     end if;
 
-    if v_type='payment' and v_ref is not null then
-      select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
-        from public.payments p
-        where p.provider=p_provider and (p.provider_payment_id=v_ref or p.merchant_reference=v_ref)
-        limit 1;
-    elsif v_type='refund' and v_ref is not null then
-      select r.id::text,r.amount_paise,r.status into v_internal,v_expected,v_expected_status
-        from public.refunds r where r.provider=p_provider and r.provider_refund_id=v_ref limit 1;
-    elsif v_type='payout' and v_ref is not null then
-      select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
-        from public.payouts p where p.provider=p_provider and p.provider_transfer_id=v_ref limit 1;
-    elsif v_type='deposit' and v_ref is not null then
-      select d.id::text,d.amount_paise,d.status::text into v_internal,v_expected,v_expected_status
-        from public.deposits d where d.provider=p_provider and d.provider_reference=v_ref limit 1;
-    elsif v_type='chargeback' and v_ref is not null then
-      select d.id::text,d.amount_paise,d.status into v_internal,v_expected,v_expected_status
-        from public.payment_disputes d where d.provider=p_provider and d.provider_dispute_reference=v_ref limit 1;
+    if v_type='payment' then
+      if v_ref is not null then
+        select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
+          from public.payments p where p.provider=p_provider
+            and (p.provider_payment_id=v_ref or p.merchant_reference=v_ref) limit 1;
+      elsif v_internal is not null then
+        select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
+          from public.payments p where p.provider=p_provider and p.id::text=v_internal limit 1;
+      end if;
+    elsif v_type='refund' then
+      if v_ref is not null then
+        select r.id::text,r.amount_paise,r.status into v_internal,v_expected,v_expected_status
+          from public.refunds r where r.provider=p_provider and r.provider_refund_id=v_ref limit 1;
+      elsif v_internal is not null then
+        select r.id::text,r.amount_paise,r.status into v_internal,v_expected,v_expected_status
+          from public.refunds r where r.provider=p_provider and r.id::text=v_internal limit 1;
+      end if;
+    elsif v_type='payout' then
+      if v_ref is not null then
+        select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
+          from public.payouts p where p.provider=p_provider and p.provider_transfer_id=v_ref limit 1;
+      elsif v_internal is not null then
+        select p.id::text,p.amount_paise,p.status::text into v_internal,v_expected,v_expected_status
+          from public.payouts p where p.provider=p_provider and p.id::text=v_internal limit 1;
+      end if;
+    elsif v_type='deposit' then
+      if v_ref is not null then
+        select d.id::text,d.amount_paise,d.status::text into v_internal,v_expected,v_expected_status
+          from public.deposits d where d.provider=p_provider and d.provider_reference=v_ref limit 1;
+      elsif v_internal is not null then
+        select d.id::text,d.amount_paise,d.status::text into v_internal,v_expected,v_expected_status
+          from public.deposits d where d.provider=p_provider and d.id::text=v_internal limit 1;
+      end if;
+    elsif v_type='chargeback' then
+      if v_ref is not null then
+        select d.id::text,d.amount_paise,d.status into v_internal,v_expected,v_expected_status
+          from public.payment_disputes d where d.provider=p_provider and d.provider_dispute_reference=v_ref limit 1;
+      elsif v_internal is not null then
+        select d.id::text,d.amount_paise,d.status into v_internal,v_expected,v_expected_status
+          from public.payment_disputes d where d.provider=p_provider and d.id::text=v_internal limit 1;
+      end if;
     end if;
 
     if v_internal is null then
@@ -66,12 +90,12 @@ begin
       v_match_status:='missing_provider';
     elsif v_expected is distinct from v_actual then
       v_match_status:='amount_mismatch';
+    elsif v_type='settlement' then
+      v_match_status:='manual_review';
     elsif v_expected_status is null or lower(v_expected_status)<>v_status then
       -- Provider adapters must normalize statuses to ShelfShare's internal
       -- canonical values; an unknown state is not a successful match.
       v_match_status:='status_mismatch';
-    elsif v_type='settlement' then
-      v_match_status:='manual_review';
     else
       v_match_status:='matched';
     end if;
