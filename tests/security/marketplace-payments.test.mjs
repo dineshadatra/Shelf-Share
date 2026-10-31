@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture, handoverFinality, depositAvailability] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture, handoverFinality, depositAvailability, reconciliation] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -24,7 +24,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../supabase/migrations/202610300028_member_financial_serialization.sql"),
   read("../../supabase/migrations/202610300029_late_capture_refunds_and_chargeback_deposit_gate.sql"),
   read("../../supabase/migrations/202610300030_handover_rotation_and_financial_finality.sql"),
-  read("../../supabase/migrations/202610300031_deposit_position_pending_booking_guard.sql")
+  read("../../supabase/migrations/202610300031_deposit_position_pending_booking_guard.sql"),
+  read("../../supabase/migrations/202610300032_reconciliation_amount_and_status_match.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -376,6 +377,16 @@ test("available deposit balance is hidden while a live booking-request hold exis
   assert.match(position, /r\.status='hold'/);
   assert.match(position, /r\.expires_at>now\(\)/);
   assert.match(position, /payment_disputes/);
+});
+
+test("payment reconciliation requires both amount and canonical provider status to match", () => {
+  const reconcile = functionBody(reconciliation, "public.record_provider_reconciliation(");
+  assert.match(reconcile, /v_expected_status/);
+  assert.match(reconcile, /v_expected is distinct from v_actual/);
+  assert.match(reconcile, /lower\(v_expected_status\)<>v_status/);
+  assert.match(reconcile, /v_type='settlement'.*manual_review/s);
+  assert.match(reconcile, /if v_match_status='matched' then v_matched/);
+  assert.match(reconcile, /status_mismatch/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
