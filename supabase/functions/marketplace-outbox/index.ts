@@ -76,6 +76,20 @@ Deno.serve(async (req) => {
           provider_checkout_url: intent.checkoutUrl,
         }).eq("id", payment.id);
         if (updateError) throw new Error("payment_reference_persist_failed");
+      } else if (eventType === "refund_after_unreserved_capture" || eventType === "refund_after_inventory_conflict") {
+        const paymentId = str(payload.payment_id);
+        if (!paymentId) throw new Error("late_capture_payment_id_missing");
+        const reason = eventType === "refund_after_unreserved_capture"
+          ? "captured_without_active_reservation"
+          : "captured_inventory_conflict";
+        const { error } = await service.rpc("queue_captured_payment_refund", {
+          p_payment_id: paymentId,
+          p_reason_code: reason,
+          p_idempotency_key: "auto-capture-refund:" + str(event.idempotency_key),
+        });
+        if (error) throw new Error("late_capture_refund_queue_failed");
+        // The queued refund_requested event is processed by a subsequent worker
+        // pass. This event only guarantees that a refund obligation now exists.
       } else if (eventType === "refund_requested") {
         const refundId = str(payload.refund_id);
         const { data: refund } = await service.from("refunds").select("id,booking_id,payment_id,provider,idempotency_key,amount_paise,reason_code,provider_refund_id")
