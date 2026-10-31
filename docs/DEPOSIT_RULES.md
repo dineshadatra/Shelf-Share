@@ -102,3 +102,9 @@ The implementation is per-booking only. ShelfShare does not aggregate deposits i
 - Legal language and disclosure of custody arrangement.
 
 **Release gate:** feature flag remains OFF until Indian lawyer, CA (tax/accounting) and selected PA/bank provide written approvals.
+
+## 10. Implementation status and release gate
+
+Deposit workflow is booking-scoped, not an account wallet. Only a signed provider event can move a record into `HELD_BY_PROVIDER`; provider references and ledger events are required before a position is shown as locked or available. The available amount is zero until return closure, the configured claim window, no open rental dispute, no provider chargeback, no claim and no active/pending rental for that member. Release is an idempotent provider instruction, and the amount is marked released only after a matching provider event. Partial claim application requires an independent finance decision with a reason and a provider-supported application operation.
+
+The implementation is on `feat/frontend-foundation`, not deployed. There is no concrete provider adapter registered, and no live deposit collection/hold/release/deduction is enabled. Apply migrations through `202610300030_handover_rotation_and_financial_finality.sql` only after reviewing and testing the migration chain in a Supabase staging project. A provider-supported custody model and written legal/accounting approvals are prerequisites; a database row or outbox entry is never evidence of funds held by ShelfShare.
