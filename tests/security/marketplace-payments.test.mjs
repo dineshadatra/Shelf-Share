@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -21,7 +21,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../supabase/config.toml"),
   read("../../supabase/migrations/202610300022_return_and_chargeback_resolution.sql"),
   read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql"),
-  read("../../supabase/migrations/202610300028_member_financial_serialization.sql")
+  read("../../supabase/migrations/202610300028_member_financial_serialization.sql"),
+  read("../../supabase/migrations/202610300029_late_capture_refunds_and_chargeback_deposit_gate.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -332,6 +333,18 @@ test("deposit release is serialized against new bookings, return closure and pay
   assert.match(payout, /lock_marketplace_members/);
   assert.match(payout, /public\.disputes/);
   assert.match(payout, /payment_disputes/);
+});
+
+test("late capture recovery queues one full refund and provider worker executes it through idempotent outbox", () => {
+  const queue = functionBody(lateCapture, "public.queue_captured_payment_refund(");
+  assert.match(queue, /captured_at is null/);
+  assert.match(queue, /v_remaining/);
+  assert.match(queue, /refund_requested/);
+  assert.match(worker, /refund_after_unreserved_capture/);
+  assert.match(worker, /refund_after_inventory_conflict/);
+  assert.match(worker, /queue_captured_payment_refund/);
+  assert.match(worker, /auto-capture-refund/);
+  assert.match(lateCapture, /payment_disputes/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
