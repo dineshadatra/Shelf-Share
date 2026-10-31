@@ -50,7 +50,7 @@ Deno.serve(async (request: Request) => {
     const token = authorization.replace(/^Bearer\s+/iu,"");
     if (!token) throw new Error("authentication_required");
     if (claimsFrom(token).aal !== "aal2") throw new Error("step_up_mfa_aal2_required");
-    const body = await request.json() as { from?: unknown; to?: unknown };
+    const body = await request.json() as { from?: unknown; to?: unknown; format?: unknown };
     if (!validDate(body.from) || !validDate(body.to)) throw new Error("invalid_report_dates");
     const from = new Date(body.from + "T00:00:00Z");
     const to = new Date(body.to + "T00:00:00Z");
@@ -75,6 +75,15 @@ Deno.serve(async (request: Request) => {
       p_from:body.from,p_to:body.to
     });
     if(error) throw error;
+    if (body.format === "json") {
+      return json({
+        period: data?.period,
+        summary: data?.summary,
+        locality_performance: data?.locality_performance ?? [],
+        daily_performance: data?.daily_performance ?? []
+      }, 200, allowedOrigin);
+    }
+    if (body.format !== undefined && body.format !== "csv") throw new Error("invalid_report_format");
 
     const summary = (data?.summary ?? {}) as Record<string, unknown>;
     const summaryRows = Object.entries(summary).map(([metric,value])=>({section:"summary",metric,value}));
