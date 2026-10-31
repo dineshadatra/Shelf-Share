@@ -405,8 +405,9 @@ async function loadLegalDocuments(){
  try{
   const data=await invokePrivacy("legal-list"),rows=data.documents||[];
   target.innerHTML=rows.length?'<table><thead><tr><th>Document</th><th>Version</th><th>Review state</th><th>Published</th><th>SHA-256</th><th>Effective from</th><th>Actions</th></tr></thead><tbody>'+
-   rows.map(row=>'<tr><td><strong>'+esc(row.title)+'</strong><br><small>'+esc(row.document_type)+'</small></td><td>'+esc(row.version)+'</td><td>'+esc(row.review_status)+'</td><td>'+esc(row.is_published?"Yes":"No")+'</td><td><code>'+esc(String(row.sha256||"").slice(0,16))+'…</code></td><td>'+esc(fmt(row.effective_from))+'</td><td><div class="table-actions">'+(row.is_published?'<button class="secondary" data-legal-download="'+esc(row.id)+'">Download</button>':(state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-edit="'+esc(row.id)+'">Edit draft</button>':""))+(row.review_status==="draft"&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-review="'+esc(row.id)+'">Submit review</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.request")?'<button class="secondary" data-legal-counsel="'+esc(row.id)+'">Record counsel review</button><button class="primary" data-legal-request="'+esc(row.id)+'">Request publication</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.approve")?'<button class="secondary" data-legal-publish="'+esc(row.id)+'">Publish approved</button>':"")+'</div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No legal documents found.</div>';
+   rows.map(row=>'<tr><td><strong>'+esc(row.title)+'</strong><br><small>'+esc(row.document_type)+'</small></td><td>'+esc(row.version)+'</td><td>'+esc(row.review_status)+'</td><td>'+esc(row.is_published?"Yes":"No")+'</td><td><code>'+esc(String(row.sha256||"").slice(0,16))+'…</code></td><td>'+esc(fmt(row.effective_from))+'</td><td><div class="table-actions">'+(row.is_published?'<button class="secondary" data-legal-download="'+esc(row.id)+'">Download</button>':(state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-edit="'+esc(row.id)+'">Edit draft</button>':""))+(row.is_published&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-next="'+esc(row.id)+'">Create next version</button>':"")+(row.review_status==="draft"&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-review="'+esc(row.id)+'">Submit review</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.request")?'<button class="secondary" data-legal-counsel="'+esc(row.id)+'">Record counsel review</button><button class="primary" data-legal-request="'+esc(row.id)+'">Request publication</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.approve")?'<button class="secondary" data-legal-publish="'+esc(row.id)+'">Publish approved</button>':"")+'</div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No legal documents found.</div>';
   target.querySelectorAll("[data-legal-edit]").forEach(button=>button.addEventListener("click",()=>openLegalDraft(button.dataset.legalEdit)));
+  target.querySelectorAll("[data-legal-next]").forEach(button=>button.addEventListener("click",()=>createLegalVersion(button.dataset.legalNext)));
   target.querySelectorAll("[data-legal-download]").forEach(button=>button.addEventListener("click",async()=>{try{await downloadPrivacyDocument(button.dataset.legalDownload);}catch(error){alert(error.message||"Download failed.");}}));
   target.querySelectorAll("[data-legal-review]").forEach(button=>button.addEventListener("click",()=>submitLegalReview(button.dataset.legalReview)));
   target.querySelectorAll("[data-legal-request]").forEach(button=>button.addEventListener("click",()=>requestLegalPublication(button.dataset.legalRequest)));
@@ -456,6 +457,20 @@ async function submitLegalReview(documentId){
   await ensureAal2();
   await invokePrivacy("legal-submit-review",{documentId,reviewNotes:reason});
   await loadLegalDocuments();
+ });
+}
+
+
+async function createLegalVersion(sourceDocumentId){
+ askReason("Create next legal document version","This copies the published source into a new unpublished draft. Choose a new version number and Markdown source path, then download and commit the file to Git after editing.",async reason=>{
+  await ensureAal2();
+  const newVersion=prompt("New version (e.g. 1.1 or 2.0):");
+  if(!newVersion)return;
+  const newContentUri=prompt("New Markdown path (docs/legal-drafts/...md):");
+  if(!newContentUri)return;
+  const result=await invokePrivacy("legal-create-version",{sourceDocumentId,newVersion,newContentUri,reason});
+  await loadLegalDocuments();
+  await openLegalDraft(result.documentId);
  });
 }
 
