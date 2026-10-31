@@ -86,6 +86,16 @@ test("migration contains restricted delivery, consent, support SLA and finance g
   assert.match(backfill, /verification-submitted-reviewer/u);
   assert.match(migration, /auth\.jwt\(\)->>'role'/u);
   assert.match(migration, /issued_at timestamptz/u);
-  assert.match(hardening, /issued_at>=p_from/u);
+  assert.match(hardening, /issued_at>=v_from/u);
   assert.match(hardening, /Asia\/Kolkata/u);
+});
+
+
+test("staff console JavaScript parses and exposes finance/support tools", async () => {
+  const admin = await readFile(new URL("../../../admin/app.js", import.meta.url), "utf8");
+  const source = admin.replace(/^import[^\n]*\n/u, "");
+  assert.doesNotThrow(() => new Function(source));
+  assert.match(source, /finance-report/u);
+  assert.match(source, /support-tickets/u);
+  assert.match(source, /record_financial_cost/u);
 });
