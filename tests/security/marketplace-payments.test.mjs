@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
-const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture, handoverFinality] = await Promise.all([
+const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents, disputes, outbox, api, worker, adapter, bookDetails, rentals, scanner, config, workspace, providerGate, serialization, lateCapture, handoverFinality, depositAvailability] = await Promise.all([
   read("../../supabase/migrations/202610300020_booking_payments_handover.sql"),
   read("../../supabase/migrations/202610300004_finance_ledger.sql"),
   read("../../supabase/migrations/202610300003_booking_handover.sql"),
@@ -23,7 +23,8 @@ const [enumMigration, baseFinance, baseBooking, finance, booking, financeEvents,
   read("../../supabase/migrations/202610300027_provider_idempotency_gate.sql"),
   read("../../supabase/migrations/202610300028_member_financial_serialization.sql"),
   read("../../supabase/migrations/202610300029_late_capture_refunds_and_chargeback_deposit_gate.sql"),
-  read("../../supabase/migrations/202610300030_handover_rotation_and_financial_finality.sql")
+  read("../../supabase/migrations/202610300030_handover_rotation_and_financial_finality.sql"),
+  read("../../supabase/migrations/202610300031_deposit_position_pending_booking_guard.sql")
 ]);
 
 const functionBody = (source, name, nextName = "\nrevoke all on function") => {
@@ -367,6 +368,14 @@ test("collection handover QR can be reissued only before scan and tax cannot cha
   assert.match(tax, /v_booking\.status<>'owner_accepted'/);
   assert.match(tax, /exists\(select 1 from public\.payments/);
   assert.match(handoverFinality, /p_tax_withheld_paise is null/);
+});
+
+test("available deposit balance is hidden while a live booking-request hold exists", () => {
+  const position = functionBody(depositAvailability, "public.get_my_deposit_positions(");
+  assert.match(position, /active\.status='requested'/);
+  assert.match(position, /r\.status='hold'/);
+  assert.match(position, /r\.expires_at>now\(\)/);
+  assert.match(position, /payment_disputes/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
