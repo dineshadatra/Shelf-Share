@@ -10,7 +10,10 @@ export function QRCodeScanner({ onScan, onClose }: Props) {
   const controlsRef = useRef<IScannerControls | null>(null);
   const [error, setError] = useState("");
   const onScanRef = useRef(onScan);
-  onScanRef.current = onScan;
+
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
 
   useEffect(() => {
     let disposed = false;
