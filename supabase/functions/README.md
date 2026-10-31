@@ -27,3 +27,22 @@ The rental_operation_policy row is inserted inactive. Late fees require an appro
 - APP_ORIGIN (production frontend origin)
 
 Set secrets with supabase secrets set; never commit a .env file.
+
+## Notifications, support and finance reporting
+
+- customer-operations is JWT-authenticated and exposes user notification preferences, in-app notification read/list, support ticket creation/replies and staff support queue/assignment/status/export actions. Ticket access is enforced by RLS and support SQL RPCs.
+- notification-dispatch is a scheduler-only SMS worker protected by NOTIFICATION_DISPATCH_SECRET. It claims consent-eligible jobs, checks DLT template metadata and user consent immediately before sending, and records provider-reported SMS costs only when returned by the gateway.
+- support-sla-sweep is a scheduler-only function protected by SUPPORT_SLA_SWEEP_SECRET. It calls the support SLA escalation RPC.
+- financial-report requires a finance_operator permission and MFA AAL2. It generates a CSV download from the aggregate finance analytics RPC without customer identifiers.
+
+Required additional secrets:
+- APP_ORIGIN or CUSTOMER_APP_ORIGINS (exact HTTPS customer frontend origins)
+- FINANCE_REPORT_ORIGINS (exact HTTPS origins allowed to download reports)
+- NOTIFICATION_DISPATCH_SECRET (at least 32 characters)
+- SMS_GATEWAY_URL (HTTPS; provider-specific endpoint)
+- SMS_GATEWAY_API_KEY
+- SUPPORT_SLA_SWEEP_SECRET (at least 32 characters)
+
+India SMS remains fail-closed. Register ShelfShare as a Principal Entity, obtain the required header/content template IDs and telemarketer-chain information, pre-tag variable fields, and configure DLT values before enabling any SMS template. The SMS endpoint contract is generic; add a provider-specific adapter and sandbox-test it. Auth OTP remains under Supabase Auth and must use its separately approved OTP template. Email and push are not enabled by this release.
+
+Apply migrations 202610310008_notifications_support_financial_analytics.sql, 202610310009_operations_hardening.sql and 202610310010_operations_controls.sql after the admin RBAC/security migrations. See docs/NOTIFICATIONS_SUPPORT_FINANCIAL_ANALYTICS.md for deployment order, DLT release gates, SLA defaults, metric definitions and limitations.
