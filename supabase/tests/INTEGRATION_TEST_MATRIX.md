@@ -44,6 +44,7 @@ These are integration/release tests, not assertions that the current unit suite 
 | Case evidence IDOR | Submit case evidence with another user's path/case | Rejected |
 | Safety report | Report unsafe public handover | Report and risk alert created, support queue notified |
 | Block/mute | Block another user or mute a conversation | Only caller's own relationship/preferences change |
+| Block enforcement | Sender tries to message a participant who blocked them, or whom they blocked | Message insert is rejected by DB trigger; active rental obligations remain intact |
 | Account suspension | Suspend user with an active rental | New activity blocked; active booking, payment and return obligations remain |
 
 ## Database checks

@@ -1303,4 +1303,30 @@ $$;
 revoke all on function public.admin_resolve_rental_safety_report(uuid,text,text,text) from public,anon;
 grant execute on function public.admin_resolve_rental_safety_report(uuid,text,text,text) to authenticated;
 
+-- A block is enforced at the message boundary; it does not cancel or alter a rental.
+create or replace function private.reject_blocked_chat_message()
+returns trigger language plpgsql security definer
+set search_path = pg_catalog,public
+as $$
+begin
+  if new.message_type='text' and exists(
+    select 1
+    from public.chat_participants cp
+    join public.user_blocks ub
+      on (ub.blocker_id=new.sender_id and ub.blocked_id=cp.user_id)
+      or (ub.blocker_id=cp.user_id and ub.blocked_id=new.sender_id)
+    where cp.conversation_id=new.conversation_id
+      and cp.user_id<>new.sender_id
+      and cp.left_at is null
+  ) then
+    raise exception 'message_blocked_by_user_relationship';
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists chat_messages_block_relationship_guard on public.chat_messages;
+create trigger chat_messages_block_relationship_guard
+before insert on public.chat_messages
+for each row execute function private.reject_blocked_chat_message();
+
 commit;
