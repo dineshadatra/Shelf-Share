@@ -225,10 +225,24 @@ Deno.serve(async (request: Request) => {
         p_notice_version: noticeVersion, p_source: source
       });
       if (error) throw error;
-      if (consentAction === "withdrawn" && purpose === "marketing_communications") {
-        const { error: prefError } = await admin.from("notification_preferences")
-          .update({ sms_marketing_enabled: false }).eq("user_id", actorId);
-        if (prefError && !/0 rows|not found/iu.test(prefError.message)) throw prefError;
+      if (purpose === "marketing_communications" || purpose === "service_sms") {
+        const { data: current, error: preferenceReadError } = await actorClient.rpc("get_my_notification_preferences");
+        if (preferenceReadError) throw preferenceReadError;
+        const existing = (current ?? {}) as Record<string, unknown>;
+        const serviceEnabled = purpose === "service_sms" && consentAction === "withdrawn" ? false :
+          Boolean(existing.sms_service_enabled);
+        const marketingEnabled = purpose === "marketing_communications" && consentAction === "withdrawn" ? false :
+          Boolean(existing.sms_marketing_enabled);
+        const { error: preferenceError } = await actorClient.rpc("update_notification_preferences", {
+          p_in_app_enabled: existing.in_app_enabled !== false,
+          p_sms_service_enabled: serviceEnabled,
+          p_sms_marketing_enabled: marketingEnabled,
+          p_email_enabled: existing.email_enabled === true,
+          p_push_enabled: existing.push_enabled === true,
+          p_consent_source: "privacy_workflow",
+          p_consent_version: noticeVersion
+        });
+        if (preferenceError) throw preferenceError;
       }
       return json({ recorded: true, consentEventId: data, purpose, action: consentAction }, 200, allowedOrigin);
     }
