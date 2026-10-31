@@ -43,7 +43,7 @@ Before enabling a ShelfShare SMS template:
 2. Obtain an approved header and register the exact template in the right message category (service, transactional or promotional, as legally applicable).
 3. Capture the DLT PE ID, header, content-template ID and telemarketer chain in the private DLT configuration/template records.
 4. Configure the exact registered body and the list of pre-tagged variable names/types. The worker rejects unapproved, missing, unsafe, duplicated or excessive variables.
-5. Where commercial/marketing consent is required, retain the registered consent evidence and confirm it matches the user's explicit preference state.
+5. Where commercial/marketing consent is required, retain the registered consent evidence and confirm it matches the user's explicit preference state. The app currently records an explicit opt-in separately for service SMS and marketing SMS; counsel/TSP must confirm the final consent category and whether a particular service template requires the same mechanism.
 6. Obtain counsel and TSP confirmation before enabling sms_enabled=true.
 
 Official references:
@@ -111,7 +111,7 @@ All values are integer paise unless a field is a percentage/count/date. Definiti
 - Gross rental transaction value: base rental subtotal on bookings with a captured payment in the selected capture-date period. Security deposits and booked tax are excluded. It is gross of subsequent refunds.
 - Commission: rows in commission_ledger created during the period.
 - Gateway, SMS, verification and support costs: append-only cost entries recorded from provider invoices/receipts or other evidence. SMS cost is auto-recorded only when the provider response returns an actual costPaise; missing costs are not imputed.
-- Referral expenditure: issued referral reward values plus recorded referral operating costs.
+- Referral expenditure: referral reward values whose issue timestamp falls in the period, plus recorded referral operating costs. Existing issued rewards are backfilled with creation time because the original issue timestamp was not stored; post-migration issuance uses the actual transition time.
 - Refunds: completed/succeeded refund amounts, shown separately. They are not automatically subtracted from commission because refund principal may include rental proceeds and the system cannot assume how much platform revenue was reversed.
 - Booked tax: the booking tax component for captured bookings. It is an operational amount only, not a tax-liability calculation, GST return, tax invoice register or filing.
 - Net contribution before other overheads: commission less recorded gateway, SMS, verification, referral reward/operating and support costs. It is not accounting profit, cash balance, contribution after all overheads or statutory revenue.
