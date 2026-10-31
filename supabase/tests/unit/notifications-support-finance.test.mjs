@@ -87,4 +87,5 @@ test("migration contains restricted delivery, consent, support SLA and finance g
   assert.match(migration, /auth\.jwt\(\)->>'role'/u);
   assert.match(migration, /issued_at timestamptz/u);
   assert.match(hardening, /issued_at>=p_from/u);
+  assert.match(hardening, /Asia\/Kolkata/u);
 });
