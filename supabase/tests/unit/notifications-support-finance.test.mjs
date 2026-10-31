@@ -46,9 +46,9 @@ test("SMS rendering requires every variable to be pre-approved in the DLT policy
 test("SMS templates with too many variables or duplicated variable names fail closed", () => {
   const policy = [
     { key: "a", type: "reference"  },
-    { key: "b", type: "reference" as const },
-    { key: "c", type: "reference" as const },
-    { key: "d", type: "reference" as const }
+    { key: "b", type: "reference" },
+    { key: "c", type: "reference" },
+    { key: "d", type: "reference" }
   ];
   assert.throws(() => renderApprovedSmsTemplate("{{a}} {{b}} {{c}} {{d}}", {
     a:"a",b:"b",c:"c",d:"d"
