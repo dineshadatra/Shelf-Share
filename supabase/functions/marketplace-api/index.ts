@@ -468,9 +468,14 @@ Deno.serve(async (req) => {
       const tokenBytes = new Uint8Array(32);
       crypto.getRandomValues(tokenBytes);
       const qrToken = encodeBase64Url(tokenBytes);
-      const otpBytes = new Uint32Array(1);
-      crypto.getRandomValues(otpBytes);
-      const otp = String(otpBytes[0] % 1000000).padStart(6, "0");
+      let otpNumber = 0;
+      const unbiasedRange = 4294967296 - (4294967296 % 1000000);
+      do {
+        const otpBytes = new Uint32Array(1);
+        crypto.getRandomValues(otpBytes);
+        otpNumber = otpBytes[0];
+      } while (otpNumber >= unbiasedRange);
+      const otp = String(otpNumber % 1000000).padStart(6, "0");
       const [tokenHash, otpHash] = await Promise.all([hashHandoverSecret(qrToken), hashHandoverSecret(otp)]);
       const expiresAt = new Date(Date.now() + Math.min(Math.max(config.handover_ttl_seconds, 60), 900) * 1000).toISOString();
       const { data: sessionId, error } = await service.rpc("create_handover_session_secure", {
@@ -485,7 +490,7 @@ Deno.serve(async (req) => {
       const sessionId = text(payload.session_id, 64);
       const token = text(payload.qr_token, 256);
       const otp = text(payload.otp, 12);
-      if (!sessionId || (!token && !otp) || !Boolean(payload.condition_acknowledged)) return reply(400, { error: "Session, QR token or OTP, and condition acknowledgement are required" });
+      if (!sessionId || (!token && !otp) || payload.condition_acknowledged !== true) return reply(400, { error: "Session, QR token or OTP, and condition acknowledgement are required" });
       const [tokenHash, otpHash] = await Promise.all([
         token ? hashHandoverSecret(token) : Promise.resolve(null),
         otp ? hashHandoverSecret(otp) : Promise.resolve(null),
@@ -501,7 +506,7 @@ Deno.serve(async (req) => {
 
     if (action === "confirm_handover_initiator") {
       const sessionId = text(payload.session_id, 64);
-      if (!sessionId || !Boolean(payload.condition_acknowledged)) return reply(400, { error: "Session and condition acknowledgement are required" });
+      if (!sessionId || payload.condition_acknowledged !== true) return reply(400, { error: "Session and condition acknowledgement are required" });
       const { data, error } = await service.rpc("confirm_handover_initiator", {
         p_session_id: sessionId, p_actor_id: user.id, p_condition_acknowledged: true,
       });
