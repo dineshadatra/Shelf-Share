@@ -2,7 +2,7 @@
 
 ## Scope and release posture
 
-This increment adds an event log and delivery outbox to the existing notifications table, user-controlled in-app/SMS preferences, a staff-operated support workflow using the existing grievance ticket records, and an MFA-gated finance analytics/report endpoint. It is backend functionality: the repository still has no consumer-facing product UI for the preference and support screens.
+This increment adds an event log and delivery outbox to the existing notifications table, user-controlled in-app/SMS preferences, a staff-operated support workflow using the existing grievance ticket records, and an MFA-gated finance analytics/report endpoint. The existing staff console now includes support queue/conversation management and financial analytics/CSV screens. The repository still has no consumer-facing product UI for end-user notification preferences, ticket creation or ticket replies; those features are exposed through customer-operations for the consumer app to integrate.
 
 The initial SMS configuration is intentionally disabled. No provider credentials, DLT sender registration, DLT content templates or telemarketer chain were supplied for this environment. No SMS should be sent until the registration and provider-specific integration steps below are completed.
 
@@ -85,9 +85,10 @@ Customer-facing actions on customer-operations:
 - get-notification-preferences
 - update-notification-preferences
 
-Staff actions:
-- support-queue
+Staff actions, exposed in the staff console under Support tickets:
+- support-queue, ticket-detail, support-categories
 - manage-ticket (requires MFA AAL2 and a support/grievance permission)
+- reply-ticket (public response or staff-only internal note)
 - support-export (MFA AAL2; exports ticket operations fields, not message contents)
 
 The initial SLA policy is a proposed starting point only:
@@ -105,7 +106,7 @@ Ticket closure and resolution are support-staff actions. Requesters can reply wh
 
 ## Financial analytics and downloadable reports
 
-get_admin_financial_analytics(from,to) is available only to a finance_operator with finance.analytics.read and MFA AAL2. The financial-report Edge Function returns a CSV download for date ranges up to 367 inclusive days, using India Standard Time date boundaries. It includes summary metrics, daily performance and locality performance. The export excludes direct customer identifiers.
+get_admin_financial_analytics(from,to) is available only to a finance_operator with finance.analytics.read and MFA AAL2. The financial-report Edge Function returns a CSV download or JSON preview for date ranges up to 367 inclusive days, using India Standard Time date boundaries. The staff console renders finance KPIs, daily/locality tables and a CSV download button. It includes summary metrics, daily performance and locality performance. The export excludes direct customer identifiers.
 
 All values are integer paise unless a field is a percentage/count/date. Date boundaries and daily buckets use India Standard Time (Asia/Kolkata). Definitions:
 - Gross rental transaction value: base rental subtotal on bookings with a captured payment in the selected capture-date period. Security deposits and booked tax are excluded. It is gross of subsequent refunds.
