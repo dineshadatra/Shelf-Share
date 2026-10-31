@@ -51,6 +51,8 @@ function availableModules(){
  const modules=[...state.modules];
  if(state.permissions.has("support.manage")||state.permissions.has("grievances.manage"))modules.push({key:"support-tickets",label:"Support tickets"});
  if(state.permissions.has("finance.analytics.read"))modules.push({key:"finance-report",label:"Financial analytics"});
+ if(["legal.read","legal.draft.write","privacy.read","privacy.manage","privacy.incidents.read","privacy.retention.read","privacy.accesslog.read"].some(permission=>state.permissions.has(permission)))
+  modules.push({key:"privacy-legal",label:"Privacy & Legal"});
  return modules;
 }
 function renderNavigation(){
@@ -63,6 +65,7 @@ async function selectModule(key){
  if(key==="dashboard")await renderDashboard();
  else if(key==="support-tickets")await renderSupportTickets();
  else if(key==="finance-report")await renderFinanceReport();
+ else if(key==="privacy-legal")await renderPrivacyLegal();
  else await loadModule();
 }
 async function renderDashboard(){
@@ -323,6 +326,267 @@ async function recordFinanceCost(){
   el("costAmount").value="";el("costReason").value="";
   await loadFinanceAnalytics();
  }catch(error){message.textContent=error.message||"Unable to record cost entry.";}
+}
+
+
+
+async function invokePrivacy(action,payload={}){
+ const {data,error}=await state.supabase.functions.invoke("legal-privacy-operations",{body:Object.assign({action},payload)});
+ if(error)throw error;
+ if(data?.error)throw new Error(data.error);
+ return data;
+}
+async function downloadPrivacyDocument(documentId){
+ const {data,error}=await state.supabase.auth.getSession();
+ if(error||!data.session)throw new Error("Your session has expired.");
+ const response=await fetch(state.projectUrl+"/functions/v1/legal-privacy-operations",{
+  method:"POST",
+  headers:{Authorization:"Bearer "+data.session.access_token,apikey:state.anonKey,"Content-Type":"application/json"},
+  body:JSON.stringify({action:"download-legal-document",documentId})
+ });
+ if(!response.ok){const body=await response.json().catch(()=>({}));throw new Error(body.error||"Document download failed.");}
+ const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download="shelfshare-legal-"+documentId+".md";a.click();URL.revokeObjectURL(url);
+}
+function downloadMarkdown(name,content){
+ const blob=new Blob([content],{type:"text/markdown;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download=name;a.click();URL.revokeObjectURL(url);
+}
+async function renderPrivacyLegal(){
+ const canLegal=state.permissions.has("legal.read");
+ const canEditLegal=state.permissions.has("legal.draft.write");
+ const canPrivacy=state.permissions.has("privacy.read");
+ const canPrivacyManage=state.permissions.has("privacy.manage");
+ const canIncidents=state.permissions.has("privacy.incidents.read");
+ const canRetention=state.permissions.has("privacy.retention.read");
+ const canAccessLog=state.permissions.has("privacy.accesslog.read");
+ el("content").innerHTML='<div class="notice"><strong>Privacy & legal operations</strong>All legal content is draft-only until reviewed by Indian counsel and published through maker-checker approval. Privacy requests, breach incidents, retention rules and sensitive-data access are restricted and audited. Do not put passwords, OTPs, full Aadhaar/PAN numbers or payment credentials in case notes.</div>'+
+ (canLegal?'<div class="section-heading"><div><h2>Legal document register</h2><p>Versioned Markdown documents · SHA-256 · publication requires independent approval</p></div><button id="refreshLegal" class="secondary">Refresh</button></div><div id="legalDocumentTable" class="table-wrap"><div class="empty">Loading legal documents…</div></div><div id="legalEditor" class="card" style="margin-top:12px"><div class="empty">Select a draft to review or edit.</div></div>':"")+
+ (canPrivacy?'<div class="section-heading"><div><h2>Privacy requests</h2><p>Access, correction, deletion, consent withdrawal, portability and grievance requests</p></div><button id="exportPrivacy" class="secondary">Export request metadata</button></div><div id="privacyRequestTable" class="table-wrap"><div class="empty">Loading privacy requests…</div></div>':"")+
+ (canIncidents?'<div class="section-heading"><div><h2>Security and privacy incidents</h2><p>Incident record, containment, impact assessment and notification evidence</p></div><button id="newPrivacyIncident" class="primary">Record incident</button></div><div id="privacyIncidentTable" class="table-wrap"></div>':"")+
+ (canRetention?'<div class="section-heading"><div><h2>Data retention rules</h2><p>Retention periods remain inactive until separately approved. No blanket automatic deletion.</p></div><button id="newRetentionRule" class="secondary">Create draft rule</button></div><div id="retentionPolicyTable" class="table-wrap"></div>':"")+
+ (canAccessLog?'<div class="section-heading"><div><h2>Sensitive-data access log</h2><p>Read-only audit trail; every view of this log is also logged.</p></div><button id="refreshAccessLog" class="secondary">Refresh</button></div><div id="sensitiveAccessTable" class="table-wrap"></div>':"");
+ if(canLegal){
+  el("refreshLegal").addEventListener("click",loadLegalDocuments);
+  await loadLegalDocuments();
+ }
+ if(canPrivacy){
+  el("exportPrivacy").addEventListener("click",async()=>{try{await ensureAal2();await downloadOperationsCsv("privacy-export","shelfshare-privacy-requests.csv");}catch(error){alert(error.message||"Export failed.");}});
+  await loadPrivacyQueue();
+ }
+ if(canIncidents){
+  el("newPrivacyIncident").addEventListener("click",createPrivacyIncident);
+  await loadPrivacyIncidents();
+ }
+ if(canRetention){
+  el("newRetentionRule").addEventListener("click",createRetentionRule);
+  await loadRetentionPolicies();
+ }
+ if(canAccessLog){
+  el("refreshAccessLog").addEventListener("click",loadSensitiveAccessLog);
+  await loadSensitiveAccessLog();
+ }
+}
+async function downloadOperationsCsv(action,filename){
+ const {data,error}=await state.supabase.auth.getSession();
+ if(error||!data.session)throw new Error("Your session has expired.");
+ const response=await fetch(state.projectUrl+"/functions/v1/legal-privacy-operations",{
+  method:"POST",
+  headers:{Authorization:"Bearer "+data.session.access_token,apikey:state.anonKey,"Content-Type":"application/json"},
+  body:JSON.stringify({action})
+ });
+ if(!response.ok){const result=await response.json().catch(()=>({}));throw new Error(result.error||"Export failed.");}
+ const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);
+}
+async function loadLegalDocuments(){
+ const target=el("legalDocumentTable");if(!target)return;
+ target.innerHTML='<div class="empty">Loading legal document register…</div>';
+ try{
+  const data=await invokePrivacy("legal-list"),rows=data.documents||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Document</th><th>Version</th><th>Review state</th><th>Published</th><th>SHA-256</th><th>Effective from</th><th>Actions</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td><strong>'+esc(row.title)+'</strong><br><small>'+esc(row.document_type)+'</small></td><td>'+esc(row.version)+'</td><td>'+esc(row.review_status)+'</td><td>'+esc(row.is_published?"Yes":"No")+'</td><td><code>'+esc(String(row.sha256||"").slice(0,16))+'…</code></td><td>'+esc(fmt(row.effective_from))+'</td><td><div class="table-actions">'+(row.is_published?'<button class="secondary" data-legal-download="'+esc(row.id)+'">Download</button>':(state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-edit="'+esc(row.id)+'">Edit draft</button>':""))+(row.review_status==="draft"&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-review="'+esc(row.id)+'">Submit review</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.request")?'<button class="primary" data-legal-request="'+esc(row.id)+'">Request publication</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.approve")?'<button class="secondary" data-legal-publish="'+esc(row.id)+'">Publish approved</button>':"")+'</div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No legal documents found.</div>';
+  target.querySelectorAll("[data-legal-edit]").forEach(button=>button.addEventListener("click",()=>openLegalDraft(button.dataset.legalEdit)));
+  target.querySelectorAll("[data-legal-download]").forEach(button=>button.addEventListener("click",async()=>{try{await downloadPrivacyDocument(button.dataset.legalDownload);}catch(error){alert(error.message||"Download failed.");}}));
+  target.querySelectorAll("[data-legal-review]").forEach(button=>button.addEventListener("click",()=>submitLegalReview(button.dataset.legalReview)));
+  target.querySelectorAll("[data-legal-request]").forEach(button=>button.addEventListener("click",()=>requestLegalPublication(button.dataset.legalRequest)));
+  target.querySelectorAll("[data-legal-publish]").forEach(button=>button.addEventListener("click",()=>publishLegalDocument(button.dataset.legalPublish)));
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load legal documents.")+'</div>';}
+}
+async function openLegalDraft(documentId){
+ const panel=el("legalEditor");panel.innerHTML='<div class="empty">Loading draft…</div>';
+ try{
+  await ensureAal2();
+  const data=await invokePrivacy("legal-draft-detail",{documentId}),doc=data.document;
+  panel.innerHTML='<div class="section-heading"><div><h2>Edit legal draft</h2><p>Saving creates a new content hash. Published versions cannot be edited.</p></div></div>'+
+   '<div class="toolbar"><div class="field"><label>Document type</label><input id="legalType" value="'+esc(doc.document_type)+'" readonly></div><div class="field"><label>Version</label><input id="legalVersion" value="'+esc(doc.version)+'"></div><div class="field"><label>Title</label><input id="legalTitle" maxlength="160" value="'+esc(doc.title)+'"></div></div>'+
+   '<div class="toolbar"><div class="field"><label>Version-controlled source path</label><input id="legalUri" value="'+esc(doc.content_uri)+'"></div><label class="support-check"><input id="legalRequireAcceptance" type="checkbox" '+(doc.requires_acceptance?"checked":"")+'> User acceptance required</label><label class="support-check"><input id="legalReacceptance" type="checkbox" '+(doc.reacceptance_required?"checked":"")+'> Reaccept after material change</label></div>'+
+   '<label class="support-reply-label">Markdown content<textarea id="legalMarkdown" rows="18" maxlength="150000"></textarea></label>'+
+   '<label class="support-reply-label">Internal review notes<textarea id="legalReviewNotes" rows="3" maxlength="4000"></textarea></label>'+
+   '<div class="table-actions"><button id="downloadLegalDraft" class="secondary">Download draft</button><button id="saveLegalDraft" class="primary">Save draft and recompute hash</button></div><p id="legalSaveMessage" class="muted"></p>';
+  el("legalMarkdown").value=doc.content_markdown||"";
+  el("legalReviewNotes").value=doc.review_notes||"";
+  el("downloadLegalDraft").addEventListener("click",()=>downloadMarkdown("shelfshare-"+doc.document_type+"-v"+doc.version+".md",el("legalMarkdown").value));
+  el("saveLegalDraft").addEventListener("click",async()=>{
+   const message=el("legalSaveMessage");
+   try{
+    await ensureAal2();
+    const result=await invokePrivacy("legal-save-draft",{
+     documentId:doc.id,documentType:doc.document_type,version:el("legalVersion").value.trim(),
+     title:el("legalTitle").value.trim(),contentUri:el("legalUri").value.trim(),
+     contentMarkdown:el("legalMarkdown").value,
+     requiresAcceptance:el("legalRequireAcceptance").checked,
+     reacceptanceRequired:el("legalReacceptance").checked,
+     reviewNotes:el("legalReviewNotes").value
+    });
+    message.textContent="Saved. New SHA-256 is stored in the registry for document "+result.documentId+".";
+    await loadLegalDocuments();
+   }catch(error){message.textContent=error.message||"Unable to save legal draft.";}
+  });
+ }catch(error){panel.innerHTML='<div class="empty">'+esc(error.message||"Unable to open legal draft.")+'</div>';}
+}
+async function submitLegalReview(documentId){
+ askReason("Submit legal document for review","The content becomes read-only after publication. Confirm counsel review notes and complete all placeholders before requesting publication.",async reason=>{
+  await ensureAal2();
+  await invokePrivacy("legal-submit-review",{documentId,reviewNotes:reason});
+  await loadLegalDocuments();
+ });
+}
+async function requestLegalPublication(documentId){
+ askReason("Request legal publication","This creates a maker-checker approval. The requesting user cannot approve their own request.",async reason=>{
+  await ensureAal2();
+  const data=await invokePrivacy("legal-request-publish",{documentId,reason,idempotencyKey:"legal-publish-"+crypto.randomUUID()});
+  alert("Publication approval request created: "+data.approvalRequestId+". A different authorised reviewer must approve it in the Approvals module.");
+  await loadLegalDocuments();
+ });
+}
+async function publishLegalDocument(documentId){
+ askReason("Publish approved legal document","Enter the approval request ID and effective date. Only a separately approved legal.publish request can publish this version.",async reason=>{
+  await ensureAal2();
+  const approvalRequestId=prompt("Approved publication request UUID:");
+  if(!approvalRequestId)return;
+  const effectiveFrom=prompt("Effective from (ISO 8601 with timezone):",new Date().toISOString());
+  if(!effectiveFrom)return;
+  await invokePrivacy("legal-publish",{documentId,approvalRequestId,effectiveFrom});
+  await loadLegalDocuments();
+ });
+}
+async function loadPrivacyQueue(){
+ const target=el("privacyRequestTable");if(!target)return;
+ target.innerHTML='<div class="empty">Loading privacy requests…</div>';
+ try{
+  const data=await invokePrivacy("privacy-queue",{limit:200}),rows=data.requests||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Reference</th><th>Type</th><th>Status</th><th>Requester UUID</th><th>Assigned</th><th>Received</th><th>Legal hold</th><th>Actions</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td><strong>'+esc(row.request_reference)+'</strong></td><td>'+esc(row.request_type)+'</td><td>'+esc(row.status)+'</td><td><code>'+esc(row.requester_id)+'</code></td><td>'+esc(row.assigned_to||"Unassigned")+'</td><td>'+esc(fmt(row.received_at))+'</td><td>'+esc(row.legal_hold?"Yes":"No")+'</td><td><div class="table-actions"><button class="secondary" data-privacy-view="'+esc(row.id)+'">Review</button>'+(row.request_type==="erasure"&&state.permissions.has("privacy.erase.request")?'<button class="secondary" data-privacy-erase="'+esc(row.id)+'">Request erasure approval</button>':"")+'<button class="secondary" data-privacy-hold="'+esc(row.requester_id)+'">Place legal hold</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No privacy requests found.</div>';
+  target.querySelectorAll("[data-privacy-view]").forEach(button=>button.addEventListener("click",()=>reviewPrivacyRequest(button.dataset.privacyView)));
+  target.querySelectorAll("[data-privacy-erase]").forEach(button=>button.addEventListener("click",()=>requestPrivacyErasure(button.dataset.privacyErase)));
+  target.querySelectorAll("[data-privacy-hold]").forEach(button=>button.addEventListener("click",()=>createPrivacyHold(button.dataset.privacyHold)));
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load privacy requests.")+'</div>';}
+}
+async function reviewPrivacyRequest(requestId){
+ try{
+  await ensureAal2();
+  const data=await invokePrivacy("privacy-detail",{requestId});
+  const item=data.request,events=data.events||[];
+  const nextStatus=prompt("New status: received, identity_check, in_progress, awaiting_user, fulfilled, partially_fulfilled, rejected, closed",item.status);
+  if(!nextStatus)return;
+  const assignedTo=prompt("Assigned staff UUID (blank to unassign)",item.assigned_to||"");
+  if(assignedTo===null)return;
+  const resolutionSummary=prompt("Resolution / update summary (leave blank to retain)",item.resolution_summary||"");
+  const reason=prompt("Internal audit reason (minimum 20 characters):");
+  if(!reason)return;
+  await invokePrivacy("privacy-update",{requestId,status:nextStatus,assignedTo:assignedTo.trim()||null,resolutionSummary:resolutionSummary||null,reason});
+  await loadPrivacyQueue();
+  alert("Request "+item.request_reference+" updated. "+events.length+" prior events were reviewed.");
+ }catch(error){alert(error.message||"Unable to update privacy request.");}
+}
+async function requestPrivacyErasure(requestId){
+ askReason("Request controlled data erasure","This queues only identity document deletion and basic profile anonymisation after a separate approver checks active rentals and legal holds.",async reason=>{
+  await ensureAal2();
+  const result=await invokePrivacy("privacy-erase-request",{requestId,reason});
+  alert("Erasure approval request created: "+result.approvalRequestId+". A separate super-admin must approve it, then queue the worker.");
+ });
+}
+async function createPrivacyHold(userId){
+ askReason("Place privacy legal hold","Use only for a documented legal, contractual, safety or dispute preservation reason.",async reason=>{
+  await ensureAal2();
+  const dataClass=prompt("Data class (e.g. identity_documents, booking_contracts, payment_ledger):","identity_documents");
+  if(!dataClass)return;
+  await invokePrivacy("privacy-hold-create",{userId,dataClass,reason});
+  await loadPrivacyQueue();
+ });
+}
+async function loadPrivacyIncidents(){
+ const target=el("privacyIncidentTable");if(!target)return;
+ target.innerHTML='<div class="empty">Loading incident register…</div>';
+ try{
+  const data=await invokePrivacy("incident-list"),rows=data.incidents||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Reference</th><th>Detected</th><th>Severity</th><th>Status</th><th>Affected subjects (estimate)</th><th>Data categories</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td>'+esc(row.incident_reference)+'</td><td>'+esc(fmt(row.detected_at))+'</td><td>'+esc(row.severity)+'</td><td>'+esc(row.status)+'</td><td>'+esc(row.estimated_affected_subjects??"Unknown")+'</td><td>'+esc((row.data_categories||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'<div class="empty">No incident records.</div>';
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load incidents.")+'</div>';}
+}
+async function createPrivacyIncident(){
+ askReason("Record a privacy/security incident","Record known facts only. Do not speculate about impact. Incident reference format: INC- followed by an uppercase unique identifier.",async containment=>{
+  await ensureAal2();
+  const incidentReference="INC-"+crypto.randomUUID().replaceAll("-","").slice(0,12).toUpperCase();
+  const detectedAt=prompt("Detection timestamp (ISO 8601):",new Date().toISOString());
+  if(!detectedAt)return;
+  const severity=prompt("Severity: low, medium, high, critical","medium");
+  if(!severity)return;
+  const factualSummary=prompt("Factual summary (minimum 20 characters):");
+  if(!factualSummary)return;
+  const categories=(prompt("Affected data categories, comma separated:","account_profile,identity_documents")||"").split(",").map(value=>value.trim()).filter(Boolean);
+  const systems=(prompt("Systems affected, comma separated:","supabase_storage")||"").split(",").map(value=>value.trim()).filter(Boolean);
+  const affected=prompt("Estimated affected people (blank if unknown):","");
+  const estimatedSubjects=affected?.trim()?Number(affected):null;
+  await invokePrivacy("incident-create",{incidentReference,detectedAt,severity,dataCategories:categories,systemsAffected:systems,estimatedSubjects,factualSummary,containment});
+  await loadPrivacyIncidents();
+ });
+}
+async function loadRetentionPolicies(){
+ const target=el("retentionPolicyTable");if(!target)return;
+ target.innerHTML='<div class="empty">Loading retention rules…</div>';
+ try{
+  const data=await invokePrivacy("retention-list"),rows=data.policies||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Data class</th><th>Rule/version</th><th>Days</th><th>Status</th><th>Created by</th><th>Approved by</th><th>Actions</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td>'+esc(row.data_class)+'</td><td>'+esc(row.rule_key)+" / "+esc(row.version)+'</td><td>'+esc(row.retention_days??"Not set")+'</td><td>'+esc(row.status)+'</td><td>'+esc(row.created_by)+'</td><td>'+esc(row.approved_by||"—")+'</td><td>'+(row.status==="draft"&&state.permissions.has("privacy.retention.approve")?'<button class="secondary" data-retention-approve="'+esc(row.id)+'">Approve</button>':"")+'</td></tr>').join("")+'</tbody></table>':'<div class="empty">No retention rules configured. No retention period is assumed by default.</div>';
+  target.querySelectorAll("[data-retention-approve]").forEach(button=>button.addEventListener("click",()=>approveRetentionRule(button.dataset.retentionApprove)));
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load retention rules.")+'</div>';}
+}
+async function createRetentionRule(){
+ askReason("Create a draft retention rule","A retention period must be justified by actual business purpose and Indian legal advice. Creating a rule does not activate deletion.",async rationale=>{
+  await ensureAal2();
+  const ruleKey=prompt("Rule key (e.g. identity-document-retention):");
+  if(!ruleKey)return;
+  const version=prompt("Version:","1.0");
+  if(!version)return;
+  const dataClass=prompt("Data class: identity_documents, verification_metadata, account_profile, booking_contracts, payment_ledger, tax_records, handover_evidence, support_cases, grievance_records, community_content, security_logs, consent_records, legal_acceptance_records, breach_incident_records, marketing_analytics","identity_documents");
+  if(!dataClass)return;
+  const days=Number(prompt("Proposed retention days (must be legally approved before activation):","365"));
+  if(!Number.isInteger(days)||days<1)throw new Error("Enter a positive whole number of days.");
+  const legalBasisNote=prompt("Legal basis / preservation rationale (minimum 10 characters):");
+  if(!legalBasisNote)return;
+  await invokePrivacy("retention-save",{ruleKey,version,dataClass,retentionDays:days,rationale,legalBasisNote});
+  await loadRetentionPolicies();
+ });
+}
+async function approveRetentionRule(policyId){
+ askReason("Approve retention schedule","Confirm that the retention period has been reviewed by Indian counsel, the business owner and the relevant records owner.",async reason=>{
+  await ensureAal2();
+  const effectiveFrom=prompt("Effective from (ISO 8601):",new Date().toISOString());
+  if(!effectiveFrom)return;
+  await invokePrivacy("retention-approve",{policyId,effectiveFrom,reason});
+  await loadRetentionPolicies();
+ });
+}
+async function loadSensitiveAccessLog(){
+ const target=el("sensitiveAccessTable");if(!target)return;
+ target.innerHTML='<div class="empty">Loading sensitive-data access events…</div>';
+ try{
+  const data=await invokePrivacy("privacy-access-log",{limit:250}),rows=data.events||[];
+  target.innerHTML=rows.length?'<table><thead><tr><th>Time</th><th>Actor</th><th>Subject</th><th>Data class</th><th>Resource</th><th>Purpose</th><th>Outcome</th><th>Request ID</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td>'+esc(fmt(row.accessed_at))+'</td><td><code>'+esc(row.actor_id)+'</code></td><td><code>'+esc(row.subject_user_id||"—")+'</code></td><td>'+esc(row.data_class)+'</td><td>'+esc(row.resource_table)+"/"+esc(row.resource_id)+'</td><td>'+esc(row.purpose)+'</td><td>'+esc(row.outcome)+'</td><td><code>'+esc(row.request_id)+'</code></td></tr>').join("")+'</tbody></table>':'<div class="empty">No sensitive access events recorded yet.</div>';
+ }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load access history.")+'</div>';}
 }
 
 async function renderSupportTickets(){
