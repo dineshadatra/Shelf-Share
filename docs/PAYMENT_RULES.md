@@ -158,3 +158,38 @@ Before production, obtain:
 - Deposit collection/hold/release legal opinion.
 - CA approval for GST, TCS, Income-tax Act 2025 withholding, invoice and fee allocation.
 - Legal review of payment, refund and fee disclosures.
+
+## 10. Implemented architecture and deployment gate
+
+The repository provides a provider-independent `MarketplacePaymentProvider` interface. It defines idempotent payment intents, payment status lookup, refunds, transfers, per-booking deposit holds/releases/claims, signed raw-body webhook verification and reconciliation. The provider registry is intentionally empty; no Cashfree, Razorpay or other provider adapter is registered. A public product page or sandbox API capability is not approval for ShelfShare's exact peer-to-peer book-rental marketplace. Obtain written provider approval for the precise model and separate written legal/CA approval before enabling any adapter or provider approval row.
+
+The backend flow is:
+
+1. Reader requests an individual copy. The server calculates the selected rental tier and 10% commission (rent only), validates identity/same-city/availability and creates a short request hold.
+2. Owner accepts or declines. Both parties accept the current rental agreement before checkout.
+3. Finance-approved tax calculation must be final before the payment attempt. A post-checkout tax update is rejected.
+4. Service-role-only payment creation validates the approved provider, Owner marketplace-vendor KYC, policy configuration and hold. The provider call uses merchant reference and idempotency key.
+5. Only signed provider webhooks (or a verified provider status query in a reviewed adapter) update terminal payment/refund/payout/deposit statuses. Browser redirects never confirm success.
+6. If a capture arrives after the booking or its inventory reservation can no longer be honoured, the booking enters reconciliation and a service-only idempotent full-refund obligation is queued. A later outbox pass submits that refund using provider idempotency; the refund remains pending until provider confirmation.
+7. Owner proceeds become eligible after server-verified collection handover. A finance-approved final calculation for tax withholding, provider fee and adjustments is required before payout creation. A provider payout event is the only source of `PAID`.
+
+The worker is `supabase/functions/marketplace-outbox/index.ts`. It leases events with `FOR UPDATE SKIP LOCKED`, uses provider idempotency keys, retries with backoff, and dead-letters after the configured attempt limit. It requires `MARKETPLACE_WORKER_SECRET` (at least 32 characters) in the `x-marketplace-worker-secret` header. The worker is an HTTP Edge Function; a secure scheduled invocation (for example, Supabase Cron/pg_net with the secret stored outside source control) is a separate deployment task and is not created by these migrations. Without that schedule, queued operations are not guaranteed to run automatically.
+
+## 11. Deployment sequence and environment
+
+Apply the database migrations in numeric order through `202610300030_handover_rotation_and_financial_finality.sql` in a staging Supabase project first. Deploy both Edge Functions with the project's supported Supabase CLI:
+
+- `supabase functions deploy marketplace-api --no-verify-jwt`
+- `supabase functions deploy marketplace-outbox --no-verify-jwt`
+
+The functions deliberately disable gateway JWT enforcement in `supabase/config.toml` because `marketplace-api` validates the caller with `auth.getUser()` and `marketplace-outbox` validates its dedicated worker secret. Do not expose the Supabase service-role key to the browser. Configure `APP_ORIGIN`, `HANDOVER_TOKEN_PEPPER` (random secret, 32+ characters) and `MARKETPLACE_WORKER_SECRET` (random secret, 32+ characters) as Edge Function secrets; the Supabase platform provides its standard URL/service-role environment to the function runtime. Rotate handover pepper only after active QR/OTP sessions have expired or been invalidated.
+
+No booking timing, duration, tax, cancellation or deposit claim policy is seeded. A trusted operator must configure and approve the versioned configuration row, including request/payment holds, duration semantics, tax-policy reference and deposit claim window, before checkout or deposit release can pass. Finance must record the per-booking tax calculation and per-owner final settlement calculation. Seed approved public handover points and ensure their city matches the copy. Verify the `rental-evidence-private` bucket is private and upload-only for participant-scoped paths.
+
+## 12. Test coverage and verification limits
+
+`tests/security/marketplace-payments.test.mjs` and the existing security suite assert source-level security invariants for duplicate webhook IDs, failed events, browser-closure recovery, booking interval exclusion, cross-city checks, QR single-use/expiry/OTP limits, private evidence, deposit release guards, failed refund/payout states, chargebacks, owner no-show and provider idempotency. GitHub Actions runs security tests, TypeScript/build and lint.
+
+These are static regression tests, not a provider certification, SQL integration test or end-to-end test against a configured Supabase database. The migrations have not been applied to a live/staging project in this work; no two-session race, real webhook signature, bank settlement, provider refund or physical handover has been exercised. Before production, run migration validation and concurrent transaction tests in staging, use a provider-approved sandbox adapter, exercise webhook retry/out-of-order scenarios, and reconcile a full payment/refund/payout/deposit lifecycle against the provider reports.
+
+The exact cancellation/no-show refund matrix, fee allocation, GST/withholding treatment and provider settlement timetable remain approval gates. No automatic no-show fee, damage deduction or deposit confiscation is implemented.
