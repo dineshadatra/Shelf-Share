@@ -105,9 +105,9 @@ Ticket closure and resolution are support-staff actions. Requesters can reply wh
 
 ## Financial analytics and downloadable reports
 
-get_admin_financial_analytics(from,to) is available only to a finance_operator with finance.analytics.read and MFA AAL2. The financial-report Edge Function returns a CSV download for date ranges up to 367 inclusive days. It includes summary metrics, daily performance and locality performance. The export excludes direct customer identifiers.
+get_admin_financial_analytics(from,to) is available only to a finance_operator with finance.analytics.read and MFA AAL2. The financial-report Edge Function returns a CSV download for date ranges up to 367 inclusive days, using India Standard Time date boundaries. It includes summary metrics, daily performance and locality performance. The export excludes direct customer identifiers.
 
-All values are integer paise unless a field is a percentage/count/date. Definitions:
+All values are integer paise unless a field is a percentage/count/date. Date boundaries and daily buckets use India Standard Time (Asia/Kolkata). Definitions:
 - Gross rental transaction value: base rental subtotal on bookings with a captured payment in the selected capture-date period. Security deposits and booked tax are excluded. It is gross of subsequent refunds.
 - Commission: rows in commission_ledger created during the period.
 - Gateway, SMS, verification and support costs: append-only cost entries recorded from provider invoices/receipts or other evidence. SMS cost is auto-recorded only when the provider response returns an actual costPaise; missing costs are not imputed.
