@@ -505,6 +505,20 @@ Deno.serve(async (request: Request) => {
       return json({ document: doc, revisions: revisions ?? [] }, 200, allowedOrigin);
     }
 
+    if (action === "legal-create-version") {
+      await requirePermission("legal.draft.write"); requireAal2();
+      const sourceDocumentId=uuidValue(body.sourceDocumentId,"source_document_id");
+      const newVersion=textValue(body.newVersion,"new_version",3,40);
+      const newContentUri=textValue(body.newContentUri,"new_content_uri",10,180);
+      const reason=textValue(body.reason,"reason",20,2000);
+      const {data,error}=await actorClient.rpc("admin_create_legal_version",{
+        p_source_document_id:sourceDocumentId,p_new_version:newVersion,
+        p_new_content_uri:newContentUri,p_change_reason:reason
+      });
+      if(error)throw error;
+      return json({created:true,documentId:data},201,allowedOrigin);
+    }
+
     if (action === "legal-save-draft") {
       await requirePermission("legal.draft.write"); requireAal2();
       const id = body.documentId ? uuidValue(body.documentId, "document_id") : null;
@@ -626,9 +640,21 @@ Deno.serve(async (request: Request) => {
         throw new Error("invalid_incident_status");
       }
       if (Object.keys(patch).length <= 2) throw new Error("incident_update_fields_required");
+      const {data:before,error:beforeError}=await admin.from("privacy_breach_incidents")
+        .select("status").eq("id",id).maybeSingle();
+      if(beforeError||!before)throw new Error("privacy_incident_not_found");
       const { error } = await admin.from("privacy_breach_incidents").update(patch).eq("id", id);
       if (error) throw error;
-      await audit("privacy_incident_updated", "privacy_breach_incidents", id, reason, { fields: Object.keys(patch) });
+      const changedFields=Object.keys(patch).filter(key=>!["updated_by","updated_at"].includes(key));
+      const newStatus=typeof patch.status==="string"?patch.status:before.status;
+      const {error:historyError}=await admin.from("privacy_breach_incident_events").insert({
+        incident_id:id,actor_id:actorId,event_type:newStatus==="closed"?"closed":
+          (newStatus!==before.status?"status_changed":"incident_updated"),
+        old_status:before.status,new_status:newStatus,reason,
+        changed_fields:changedFields
+      });
+      if(historyError)throw new Error("privacy_incident_history_write_failed");
+      await audit("privacy_incident_updated", "privacy_breach_incidents", id, reason, { fields: changedFields });
       return json({ updated: true }, 200, allowedOrigin);
     }
 
