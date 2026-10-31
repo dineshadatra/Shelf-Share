@@ -102,7 +102,9 @@ Deno.serve(async (request: Request) => {
     });
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) throw new Error("authentication_required");
-    const body = await request.json() as Body;
+    const rawBody = await request.text();
+    if (rawBody.length > 20000) throw new Error("request_body_too_large");
+    const body = JSON.parse(rawBody) as Body;
     const action = textValue(body.action, "action", 2, 40);
     const requireSupportPermission = async () => {
       const [{ data: supportPermission, error: supportError }, { data: grievancePermission, error: grievanceError }] = await Promise.all([
@@ -183,18 +185,24 @@ Deno.serve(async (request: Request) => {
       if (error) throw error;
       const ids = (tickets ?? []).map((ticket: { id: string }) => ticket.id);
       let messages: unknown[] = [];
+      let history: unknown[] = [];
       if (ids.length) {
-        const { data, error: messageError } = await client.from("support_ticket_messages")
-          .select("id,ticket_id,author_type,body,created_at")
-          .in("ticket_id", ids).eq("is_internal", false).order("created_at", { ascending: true }).limit(500);
-        if (messageError) throw messageError;
-        messages = data ?? [];
+        const [{ data: messageData, error: messageError }, { data: historyData, error: historyError }] = await Promise.all([
+          client.from("support_ticket_messages")
+            .select("id,ticket_id,author_type,body,created_at")
+            .in("ticket_id", ids).eq("is_internal", false).order("created_at", { ascending: true }).limit(500),
+          client.from("support_ticket_history")
+            .select("id,ticket_id,event_type,old_status,new_status,old_priority,new_priority,created_at")
+            .in("ticket_id", ids).order("created_at", { ascending: true }).limit(500)
+        ]);
+        if (messageError || historyError) throw messageError ?? historyError;
+        messages = messageData ?? [];
+        history = historyData ?? [];
       }
-      return json({ tickets: tickets ?? [], messages }, 200, allowedOrigin);
+      return json({ tickets: tickets ?? [], messages, history }, 200, allowedOrigin);
     }
 
     if (action === "support-categories") {
-      await requireSupportPermission();
       const { data, error } = await client.from("support_ticket_categories")
         .select("category_key,label,sort_order").eq("is_active", true).order("sort_order");
       if (error) throw error;
@@ -225,7 +233,10 @@ Deno.serve(async (request: Request) => {
       if (body.assignedTo) query = query.eq("assigned_to", body.assignedTo);
       const { data, error } = await query.order("created_at", { ascending: true }).limit(limit);
       if (error) throw error;
-      return json({ tickets: data ?? [] }, 200, allowedOrigin);
+      const rank: Record<string, number> = { urgent: 4, high: 3, normal: 2, low: 1 };
+      const ordered = (data ?? []).sort((left: { priority: string }, right: { priority: string }) =>
+        (rank[right.priority] ?? 0) - (rank[left.priority] ?? 0));
+      return json({ tickets: ordered }, 200, allowedOrigin);
     }
 
     if (action === "manage-ticket") {
