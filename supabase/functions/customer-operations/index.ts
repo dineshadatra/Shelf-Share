@@ -104,6 +104,14 @@ Deno.serve(async (request: Request) => {
     if (authError || !authData.user) throw new Error("authentication_required");
     const body = await request.json() as Body;
     const action = textValue(body.action, "action", 2, 40);
+    const requireSupportPermission = async () => {
+      const [{ data: supportPermission, error: supportError }, { data: grievancePermission, error: grievanceError }] = await Promise.all([
+        client.rpc("admin_has_permission", { p_permission_key: "support.manage" }),
+        client.rpc("admin_has_permission", { p_permission_key: "grievances.manage" })
+      ]);
+      if (supportError || grievanceError) throw new Error("support_permission_check_failed");
+      if (supportPermission !== true && grievancePermission !== true) throw new Error("support_management_permission_denied");
+    };
 
     if (action === "notifications") {
       const limit = Math.max(1, Math.min(Number(body.limit ?? 50), 100));
@@ -186,6 +194,7 @@ Deno.serve(async (request: Request) => {
     }
 
     if (action === "support-queue") {
+      await requireSupportPermission();
       const limit = Math.max(1, Math.min(Number(body.limit ?? 100), 200));
       const { data, error } = await client.from("grievance_tickets")
         .select("id,ticket_number,requester_id,category,subject,description,status,priority,assigned_to,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,sla_breached_at,escalated_at,resolved_at,closed_at")
@@ -210,6 +219,7 @@ Deno.serve(async (request: Request) => {
     }
 
     if (action === "support-export") {
+      await requireSupportPermission();
       const claims = tokenClaims(accessToken);
       if (claims.aal !== "aal2") throw new Error("step_up_mfa_aal2_required");
       const limit = Math.max(1, Math.min(Number(body.limit ?? 1000), 1000));
