@@ -46,6 +46,10 @@ alter table public.legal_acceptances add constraint legal_acceptances_hash_check
 
 alter table public.privacy_requests
   drop constraint if exists privacy_requests_request_type_check;
+alter table public.privacy_requests
+  drop constraint if exists privacy_requests_status_check;
+alter table public.privacy_requests add constraint privacy_requests_status_check
+  check (status in ('received','identity_check','in_progress','awaiting_user','fulfilled','partially_fulfilled','rejected','closed'));
 alter table public.privacy_requests add constraint privacy_requests_request_type_check
   check (request_type in ('access','correction','erasure','portability','withdraw_consent','restriction','grievance'));
 alter table public.privacy_requests
@@ -243,6 +247,8 @@ create table if not exists public.privacy_erasure_jobs (
 );
 create index if not exists privacy_erasure_jobs_pending_idx
   on public.privacy_erasure_jobs(status,created_at) where status in ('pending','failed');
+create unique index if not exists privacy_erasure_profile_job_uq
+  on public.privacy_erasure_jobs(privacy_request_id) where job_type='profile_anonymise';
 
 create table if not exists public.privacy_erasure_job_events (
   id bigint generated always as identity primary key,
@@ -492,9 +498,12 @@ begin
     ip_hash,user_agent_hash,document_sha256,acceptance_source,consent_notice_version)
   values(v_actor,p_legal_document_id,now(),p_acceptance_context,p_ip_hash,p_user_agent_hash,
     p_document_sha256,p_source,v_doc.version)
-  on conflict(user_id,legal_document_id,acceptance_context) do update
-    set document_sha256=excluded.document_sha256
+  on conflict(user_id,legal_document_id,acceptance_context) do nothing
   returning id into v_id;
+  if v_id is null then
+    select id into v_id from public.legal_acceptances
+    where user_id=v_actor and legal_document_id=p_legal_document_id and acceptance_context=p_acceptance_context;
+  end if;
   return v_id;
 end;
 $$;
@@ -666,7 +675,7 @@ begin
     or not private.admin_can(v_actor,'privacy.erase.approve') then raise exception 'Erasure approval permission and MFA required'; end if;
   select * into v_approval from public.admin_approval_requests where id=p_approval_request_id for update;
   if not found or v_approval.action_key<>'privacy.erase' or v_approval.status<>'approved'
-    or v_approval.requested_by=v_actor or v_approval.approved_by=v_actor then
+    or v_approval.requested_by=v_actor then
     raise exception 'Separate approved erasure request required';
   end if;
   select * into v_request from public.privacy_requests
@@ -714,7 +723,7 @@ begin
       and r.status='in_progress' and not r.legal_hold
       and not exists(select 1 from public.privacy_legal_holds h
         where h.subject_user_id=j.subject_user_id and h.released_at is null)
-    order by j.created_at for update of j skip locked limit greatest(1,least(p_limit,50))
+    order by j.created_at limit greatest(1,least(p_limit,50)) for update of j skip locked
   )
   update public.privacy_erasure_jobs j set status='processing',attempts=attempts+1,started_at=now()
   from picked where j.id=picked.id returning j.*;
