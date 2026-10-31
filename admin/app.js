@@ -405,11 +405,12 @@ async function loadLegalDocuments(){
  try{
   const data=await invokePrivacy("legal-list"),rows=data.documents||[];
   target.innerHTML=rows.length?'<table><thead><tr><th>Document</th><th>Version</th><th>Review state</th><th>Published</th><th>SHA-256</th><th>Effective from</th><th>Actions</th></tr></thead><tbody>'+
-   rows.map(row=>'<tr><td><strong>'+esc(row.title)+'</strong><br><small>'+esc(row.document_type)+'</small></td><td>'+esc(row.version)+'</td><td>'+esc(row.review_status)+'</td><td>'+esc(row.is_published?"Yes":"No")+'</td><td><code>'+esc(String(row.sha256||"").slice(0,16))+'…</code></td><td>'+esc(fmt(row.effective_from))+'</td><td><div class="table-actions">'+(row.is_published?'<button class="secondary" data-legal-download="'+esc(row.id)+'">Download</button>':(state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-edit="'+esc(row.id)+'">Edit draft</button>':""))+(row.review_status==="draft"&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-review="'+esc(row.id)+'">Submit review</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.request")?'<button class="primary" data-legal-request="'+esc(row.id)+'">Request publication</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.approve")?'<button class="secondary" data-legal-publish="'+esc(row.id)+'">Publish approved</button>':"")+'</div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No legal documents found.</div>';
+   rows.map(row=>'<tr><td><strong>'+esc(row.title)+'</strong><br><small>'+esc(row.document_type)+'</small></td><td>'+esc(row.version)+'</td><td>'+esc(row.review_status)+'</td><td>'+esc(row.is_published?"Yes":"No")+'</td><td><code>'+esc(String(row.sha256||"").slice(0,16))+'…</code></td><td>'+esc(fmt(row.effective_from))+'</td><td><div class="table-actions">'+(row.is_published?'<button class="secondary" data-legal-download="'+esc(row.id)+'">Download</button>':(state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-edit="'+esc(row.id)+'">Edit draft</button>':""))+(row.review_status==="draft"&&state.permissions.has("legal.draft.write")?'<button class="secondary" data-legal-review="'+esc(row.id)+'">Submit review</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.request")?'<button class="secondary" data-legal-counsel="'+esc(row.id)+'">Record counsel review</button><button class="primary" data-legal-request="'+esc(row.id)+'">Request publication</button>':"")+(row.review_status==="in_review"&&state.permissions.has("legal.publish.approve")?'<button class="secondary" data-legal-publish="'+esc(row.id)+'">Publish approved</button>':"")+'</div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No legal documents found.</div>';
   target.querySelectorAll("[data-legal-edit]").forEach(button=>button.addEventListener("click",()=>openLegalDraft(button.dataset.legalEdit)));
   target.querySelectorAll("[data-legal-download]").forEach(button=>button.addEventListener("click",async()=>{try{await downloadPrivacyDocument(button.dataset.legalDownload);}catch(error){alert(error.message||"Download failed.");}}));
   target.querySelectorAll("[data-legal-review]").forEach(button=>button.addEventListener("click",()=>submitLegalReview(button.dataset.legalReview)));
   target.querySelectorAll("[data-legal-request]").forEach(button=>button.addEventListener("click",()=>requestLegalPublication(button.dataset.legalRequest)));
+  target.querySelectorAll("[data-legal-counsel]").forEach(button=>button.addEventListener("click",()=>recordLegalCounselReview(button.dataset.legalCounsel)));
   target.querySelectorAll("[data-legal-publish]").forEach(button=>button.addEventListener("click",()=>publishLegalDocument(button.dataset.legalPublish)));
  }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load legal documents.")+'</div>';}
 }
@@ -426,6 +427,11 @@ async function openLegalDraft(documentId){
    '<div class="table-actions"><button id="downloadLegalDraft" class="secondary">Download draft</button><button id="saveLegalDraft" class="primary">Save draft and recompute hash</button></div><p id="legalSaveMessage" class="muted"></p>';
   el("legalMarkdown").value=doc.content_markdown||"";
   el("legalReviewNotes").value=doc.review_notes||"";
+  const revisions=data.revisions||[];
+  panel.innerHTML+='<div class="section-heading"><div><h3>Immutable revision history</h3><p>Each save adds a new SHA-256 snapshot.</p></div></div>'+
+   (revisions.length?'<div class="table-wrap"><table><thead><tr><th>Revision</th><th>SHA-256</th><th>Changed by</th><th>Changed at</th><th>Note</th></tr></thead><tbody>'+
+    revisions.map(item=>'<tr><td>'+Number(item.revision_number)+'</td><td><code>'+esc(item.sha256.slice(0,16))+'…</code></td><td><code>'+esc(item.changed_by)+'</code></td><td>'+esc(fmt(item.created_at))+'</td><td>'+esc(item.change_note||"")+'</td></tr>').join("")+
+    '</tbody></table></div>':'<div class="empty">No saved revisions.</div>');
   el("downloadLegalDraft").addEventListener("click",()=>downloadMarkdown("shelfshare-"+doc.document_type+"-v"+doc.version+".md",el("legalMarkdown").value));
   el("saveLegalDraft").addEventListener("click",async()=>{
    const message=el("legalSaveMessage");
@@ -452,6 +458,21 @@ async function submitLegalReview(documentId){
   await loadLegalDocuments();
  });
 }
+
+async function recordLegalCounselReview(documentId){
+ askReason("Record Indian counsel review","Enter the external Indian lawyer's name, review date and a reference to the written review. This records an internal attestation; it does not verify the lawyer or make the draft legally compliant.",async reason=>{
+  await ensureAal2();
+  const counselName=prompt("Indian counsel full name:");
+  if(!counselName)return;
+  const reviewReference=prompt("Written opinion / engagement reference (do not enter confidential advice text):");
+  if(!reviewReference)return;
+  const reviewedAt=prompt("Date/time counsel completed review (ISO 8601):",new Date().toISOString());
+  if(!reviewedAt)return;
+  await invokePrivacy("legal-record-counsel-review",{documentId,counselName,reviewReference,reviewedAt,reason});
+  await loadLegalDocuments();
+ });
+}
+
 async function requestLegalPublication(documentId){
  askReason("Request legal publication","This creates a maker-checker approval. The requesting user cannot approve their own request.",async reason=>{
   await ensureAal2();
@@ -477,8 +498,10 @@ async function loadPrivacyQueue(){
  try{
   const data=await invokePrivacy("privacy-queue",{limit:200}),rows=data.requests||[];
   target.innerHTML=rows.length?'<table><thead><tr><th>Reference</th><th>Type</th><th>Status</th><th>Requester UUID</th><th>Assigned</th><th>Received</th><th>Legal hold</th><th>Actions</th></tr></thead><tbody>'+
-   rows.map(row=>'<tr><td><strong>'+esc(row.request_reference)+'</strong></td><td>'+esc(row.request_type)+'</td><td>'+esc(row.status)+'</td><td><code>'+esc(row.requester_id)+'</code></td><td>'+esc(row.assigned_to||"Unassigned")+'</td><td>'+esc(fmt(row.received_at))+'</td><td>'+esc(row.legal_hold?"Yes":"No")+'</td><td><div class="table-actions"><button class="secondary" data-privacy-view="'+esc(row.id)+'">Review</button>'+(row.request_type==="erasure"&&state.permissions.has("privacy.erase.request")?'<button class="secondary" data-privacy-erase="'+esc(row.id)+'">Request erasure approval</button>':"")+'<button class="secondary" data-privacy-hold="'+esc(row.requester_id)+'">Place legal hold</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No privacy requests found.</div>';
+   rows.map(row=>'<tr><td><strong>'+esc(row.request_reference)+'</strong></td><td>'+esc(row.request_type)+'</td><td>'+esc(row.status)+'</td><td><code>'+esc(row.requester_id)+'</code></td><td>'+esc(row.assigned_to||"Unassigned")+'</td><td>'+esc(fmt(row.received_at))+'</td><td>'+esc(row.legal_hold?"Yes":"No")+'</td><td><div class="table-actions"><button class="secondary" data-privacy-view="'+esc(row.id)+'">Review</button>'+(!row.identity_verified_at&&state.permissions.has("privacy.manage")?'<button class="secondary" data-privacy-verify="'+esc(row.id)+'">Verify identity</button>':"")+(row.request_type==="correction"&&row.identity_verified_at?'<button class="primary" data-privacy-correct="'+esc(row.id)+'" data-privacy-user="'+esc(row.requester_id)+'">Apply correction</button>':"")+(row.request_type==="erasure"&&state.permissions.has("privacy.erase.request")?'<button class="secondary" data-privacy-erase="'+esc(row.id)+'">Request erasure approval</button>':"")+'<button class="secondary" data-privacy-hold="'+esc(row.requester_id)+'">Place legal hold</button></div></td></tr>').join("")+'</tbody></table>':'<div class="empty">No privacy requests found.</div>';
   target.querySelectorAll("[data-privacy-view]").forEach(button=>button.addEventListener("click",()=>reviewPrivacyRequest(button.dataset.privacyView)));
+  target.querySelectorAll("[data-privacy-verify]").forEach(button=>button.addEventListener("click",()=>verifyPrivacyRequest(button.dataset.privacyVerify)));
+  target.querySelectorAll("[data-privacy-correct]").forEach(button=>button.addEventListener("click",()=>applyPrivacyCorrection(button.dataset.privacyCorrect,button.dataset.privacyUser)));
   target.querySelectorAll("[data-privacy-erase]").forEach(button=>button.addEventListener("click",()=>requestPrivacyErasure(button.dataset.privacyErase)));
   target.querySelectorAll("[data-privacy-hold]").forEach(button=>button.addEventListener("click",()=>createPrivacyHold(button.dataset.privacyHold)));
  }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load privacy requests.")+'</div>';}
@@ -500,6 +523,32 @@ async function reviewPrivacyRequest(requestId){
   alert("Request "+item.request_reference+" updated. "+events.length+" prior events were reviewed.");
  }catch(error){alert(error.message||"Unable to update privacy request.");}
 }
+
+async function verifyPrivacyRequest(requestId){
+ askReason("Verify privacy requester identity","Use a proportionate verification step and record the verification method in the audit reason. Do not request a password or OTP.",async reason=>{
+  await ensureAal2();
+  await invokePrivacy("privacy-verify-request",{requestId,reason});
+  await loadPrivacyQueue();
+ });
+}
+async function applyPrivacyCorrection(requestId,userId){
+ askReason("Apply verified profile correction","Only display name, bio, preferred city and locale can be changed in this workflow. Email/phone changes use the account recovery/verification flow.",async reason=>{
+  await ensureAal2();
+  const displayName=prompt("Correct display name (blank to leave unchanged):");
+  const bio=prompt("Correct bio (blank to leave unchanged; use [CLEAR] to clear):");
+  const preferredCityId=prompt("Preferred city UUID (blank unchanged; [CLEAR] to clear):");
+  const locale=prompt("Locale (blank unchanged):");
+  const payload={requestId,reason};
+  if(displayName)payload.displayName=displayName;
+  if(bio!==null&&bio.trim())payload.bio=bio.trim()==="[CLEAR]"?null:bio;
+  if(preferredCityId!==null&&preferredCityId.trim())payload.preferredCityId=preferredCityId.trim()==="[CLEAR]"?null:preferredCityId;
+  if(locale)payload.locale=locale;
+  await invokePrivacy("privacy-correct-profile",payload);
+  await loadPrivacyQueue();
+  alert("The allowed profile fields were corrected for "+userId+".");
+ });
+}
+
 async function requestPrivacyErasure(requestId){
  askReason("Request controlled data erasure","This queues only identity document deletion and basic profile anonymisation after a separate approver checks active rentals and legal holds.",async reason=>{
   await ensureAal2();
