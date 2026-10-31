@@ -212,7 +212,12 @@ export default function RentalHistoryPage(){
           <p className="muted">Show this only to the other booking participant.</p>
           <p>OTP fallback: <strong style={{letterSpacing:".2em"}}>{secret.otp}</strong></p>
         </div>}
-        {isInitiator&&(!secret||secret.sessionId!==session!.id)&&<Alert tone="info">This device no longer has the original one-time QR secret. Generate a fresh QR to replace the previous session.</Alert>}
+        {isInitiator&&(!secret||secret.sessionId!==session!.id)&&!session!.qr_consumed_at&&<>
+          <Alert tone="info">This device no longer has the original QR secret. The unused token can be invalidated and replaced; the replacement expires shortly.</Alert>
+          <Button variant="outline" onClick={()=>void startHandover(booking,session!.type)} disabled={busyId===booking.id}>Replace unused QR and OTP</Button>
+        </>}
+        {isInitiator&&(!secret||secret.sessionId!==session!.id)&&session!.qr_consumed_at&&
+          <Alert tone="info">The other participant has already consumed the QR. Do not rotate it; upload your condition photograph and confirm your side below.</Alert>}
         {!isInitiator&&!myConfirmed&&myPhotos>0&&<div style={{display:"grid",gap:".5rem"}}>
           <Button onClick={()=>setScannerSession(session!.id)}>Scan participant QR with camera</Button>
           {scannerSession===session!.id&&<QRCodeScanner onScan={token=>void scanned(booking,session!,token)} onClose={()=>setScannerSession(null)}/>}
@@ -227,7 +232,7 @@ export default function RentalHistoryPage(){
           <p className="muted">Private evidence only · one or more clear photos · up to 10 MB per image.</p>
         </div>
       </>}
-      {!sessionCurrent&&(booking.status==="confirmed"||booking.status==="return_pending")&&<Button onClick={()=>void startHandover(booking,booking.status==="confirmed"?"collection":"return")} disabled={busyId===booking.id}>
+      {!sessionCurrent&&(booking.status==="confirmed"||booking.status==="collection_pending"||booking.status==="return_pending")&&<Button onClick={()=>void startHandover(booking,booking.status==="confirmed"?"collection":"return")} disabled={busyId===booking.id}>
         {session&&session.status!=="completed"?"Create a fresh one-time QR":"Start "+(booking.status==="confirmed"?"collection":"return")+" handover"}
       </Button>}
       {session&&sessionCurrent&&!isInitiator&&myConfirmed&&<Alert tone="success">Your side is confirmed. Waiting for the other participant and the required condition photographs.</Alert>}
