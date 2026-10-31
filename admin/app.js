@@ -256,9 +256,11 @@ async function renderFinanceReport(){
  '<div class="card"><div class="toolbar"><div class="field"><label>From date (IST)</label><input id="financeFrom" type="date" value="'+localDateInput(start)+'"></div><div class="field"><label>To date (IST)</label><input id="financeTo" type="date" value="'+localDateInput(now)+'"></div><button id="loadFinance" class="primary">Load analytics</button><button id="downloadFinance" class="secondary">Download CSV</button></div><p id="financeMessage" class="muted"></p></div>'+
  '<div id="financeSummary" class="cards" style="margin-top:14px"></div>'+
  '<div class="section-heading"><div><h2>Daily performance</h2><p>Captured rental value by India business date.</p></div></div><div id="financeDaily" class="table-wrap"></div>'+
- '<div class="section-heading"><div><h2>Locality performance</h2><p>Paid rentals grouped by physical copy locality.</p></div></div><div id="financeLocality" class="table-wrap"></div>';
+ '<div class="section-heading"><div><h2>Locality performance</h2><p>Paid rentals grouped by physical copy locality.</p></div></div><div id="financeLocality" class="table-wrap"></div>'+
+ (state.permissions.has("finance.costs.write")?'<div class="section-heading"><div><h2>Record verified operating cost</h2><p>Enter a provider invoice, receipt or approved expense record. Amounts are INR.</p></div></div><div class="card"><div class="toolbar"><div class="field"><label>Cost category</label><select id="costCategory"><option value="gateway_charge">Gateway charge</option><option value="sms">SMS</option><option value="verification">Verification</option><option value="referral">Referral operations</option><option value="support">Support</option></select></div><div class="field"><label>Amount (₹)</label><input id="costAmount" type="number" min="0.01" step="0.01" placeholder="0.00"></div><div class="field"><label>Expense date (IST)</label><input id="costDate" type="date" value="'+localDateInput(now)+'"></div><div class="field"><label>Vendor</label><input id="costVendor" maxlength="120"></div><div class="field"><label>Source type</label><input id="costSourceType" maxlength="60" placeholder="provider_invoice"></div><div class="field"><label>Source reference</label><input id="costSourceReference" maxlength="160" placeholder="Invoice or receipt ID"></div></div><label>Reason / evidence description<textarea id="costReason" rows="3" maxlength="1000" placeholder="Describe the source document and expense period."></textarea></label><button id="saveFinanceCost" class="primary">Record cost</button><p id="financeCostMessage" class="muted"></p></div>':"");
  el("loadFinance").addEventListener("click",loadFinanceAnalytics);
  el("downloadFinance").addEventListener("click",async()=>{try{await ensureAal2();if(!el("financeFrom").value||!el("financeTo").value)throw new Error("Choose a date range.");await requestFinanceReport("csv");}catch(error){el("financeMessage").textContent=error.message||"Download failed."; }});
+ if(el("saveFinanceCost"))el("saveFinanceCost").addEventListener("click",recordFinanceCost);
  await loadFinanceAnalytics();
 }
 async function loadFinanceAnalytics(){
@@ -293,6 +295,36 @@ async function loadFinanceAnalytics(){
   message.textContent="Period: "+data.period.from+" to "+data.period.to+" ("+data.period.timezone+"). *Before other overheads; see metric definitions in the operations guide.";
  }catch(error){message.textContent=error.message||"Unable to load analytics.";el("financeSummary").innerHTML="";el("financeDaily").innerHTML="";el("financeLocality").innerHTML="";}
 }
+
+async function recordFinanceCost(){
+ const message=el("financeCostMessage");
+ try{
+  await ensureAal2();
+  const amount=Number(el("costAmount").value),reason=el("costReason").value.trim();
+  const sourceType=el("costSourceType").value.trim(),sourceReference=el("costSourceReference").value.trim();
+  if(!Number.isFinite(amount)||amount<=0||!Number.isSafeInteger(Math.round(amount*100)))throw new Error("Enter a valid positive INR amount.");
+  if(reason.length<20||sourceType.length<2||sourceReference.length<1)throw new Error("Provide a source type, source reference and reason of at least 20 characters.");
+  if(!el("costDate").value)throw new Error("Choose the expense date.");
+  const occurredAt=new Date(el("costDate").value+"T12:00:00+05:30").toISOString();
+  const {data,error}=await state.supabase.rpc("record_financial_cost",{
+   p_cost_category:el("costCategory").value,
+   p_amount_paise:Math.round(amount*100),
+   p_occurred_at:occurredAt,
+   p_vendor:el("costVendor").value.trim()||null,
+   p_source_type:sourceType,
+   p_source_reference:sourceReference,
+   p_reason:reason,
+   p_idempotency_key:"finance-cost-"+crypto.randomUUID(),
+   p_city_id:null,
+   p_locality_id:null
+  });
+  if(error)throw error;
+  message.textContent="Verified cost entry recorded ("+String(data)+").";
+  el("costAmount").value="";el("costReason").value="";
+  await loadFinanceAnalytics();
+ }catch(error){message.textContent=error.message||"Unable to record cost entry.";}
+}
+
 async function renderSupportTickets(){
  el("content").innerHTML='<div class="notice"><strong>Support operations</strong>Ticket reads are permission-filtered. Internal notes are visible only to authorised support staff. Status/priority/assignment changes require MFA AAL2 and an audit reason.</div>'+
  '<div class="card"><div class="toolbar"><div class="field"><label>Status</label><select id="supportStatus"><option value="open">Open and active</option><option value="all">All</option><option value="in_progress">In progress</option><option value="waiting_user">Waiting for user</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select></div><div class="field"><label>Category</label><select id="supportCategory"><option value="">All categories</option></select></div><div class="field"><label>Priority</label><select id="supportPriority"><option value="">All priorities</option><option>urgent</option><option>high</option><option>normal</option><option>low</option></select></div><div class="field"><label>Assignee UUID</label><input id="supportAssignee" placeholder="Optional staff user ID"></div><button id="loadSupport" class="primary">Apply filters</button><button id="exportSupport" class="secondary">Export CSV</button></div></div>'+
