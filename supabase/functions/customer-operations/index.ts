@@ -116,7 +116,7 @@ Deno.serve(async (request: Request) => {
     if (action === "notifications") {
       const limit = Math.max(1, Math.min(Number(body.limit ?? 50), 100));
       const { data, error } = await client.from("notifications")
-        .select("id,template_key,payload,status,scheduled_at,sent_at,read_at,created_at")
+        .select("id,template_key,title,body,payload,status,scheduled_at,sent_at,read_at,created_at")
         .eq("user_id", authData.user.id).eq("channel", "in_app")
         .order("created_at", { ascending: false }).limit(limit);
       if (error) throw error;
@@ -193,13 +193,37 @@ Deno.serve(async (request: Request) => {
       return json({ tickets: tickets ?? [], messages }, 200, allowedOrigin);
     }
 
+    if (action === "support-categories") {
+      await requireSupportPermission();
+      const { data, error } = await client.from("support_ticket_categories")
+        .select("category_key,label,sort_order").eq("is_active", true).order("sort_order");
+      if (error) throw error;
+      return json({ categories: data ?? [] }, 200, allowedOrigin);
+    }
+
+    if (action === "ticket-detail") {
+      await requireSupportPermission();
+      const ticketId = textValue(body.ticketId, "ticket_id", 36, 36);
+      const [{ data: ticket, error: ticketError }, { data: messages, error: messagesError }, { data: history, error: historyError }] = await Promise.all([
+        client.from("grievance_tickets").select("*").eq("id", ticketId).single(),
+        client.from("support_ticket_messages").select("id,author_id,author_type,body,is_internal,created_at").eq("ticket_id", ticketId).order("created_at"),
+        client.from("support_ticket_history").select("id,actor_id,event_type,old_status,new_status,old_priority,new_priority,old_assignee,new_assignee,reason,created_at").eq("ticket_id", ticketId).order("created_at")
+      ]);
+      if (ticketError || messagesError || historyError) throw ticketError ?? messagesError ?? historyError;
+      return json({ ticket, messages: messages ?? [], history: history ?? [] }, 200, allowedOrigin);
+    }
+
     if (action === "support-queue") {
       await requireSupportPermission();
       const limit = Math.max(1, Math.min(Number(body.limit ?? 100), 200));
-      const { data, error } = await client.from("grievance_tickets")
-        .select("id,ticket_number,requester_id,category,subject,description,status,priority,assigned_to,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,sla_breached_at,escalated_at,resolved_at,closed_at")
-        .not("status", "in", '("resolved","closed")')
-        .order("priority", { ascending: false }).order("created_at", { ascending: true }).limit(limit);
+      let query = client.from("grievance_tickets")
+        .select("id,ticket_number,requester_id,category,subject,description,status,priority,assigned_to,created_at,updated_at,first_response_due_at,resolution_due_at,first_response_at,sla_breached_at,escalated_at,resolved_at,closed_at");
+      if (!body.status || body.status === "open") query = query.not("status", "in", '("resolved","closed")');
+      else if (body.status !== "all") query = query.eq("status", body.status);
+      if (body.category) query = query.eq("category", body.category);
+      if (body.priority) query = query.eq("priority", body.priority);
+      if (body.assignedTo) query = query.eq("assigned_to", body.assignedTo);
+      const { data, error } = await query.order("created_at", { ascending: true }).limit(limit);
       if (error) throw error;
       return json({ tickets: data ?? [] }, 200, allowedOrigin);
     }
