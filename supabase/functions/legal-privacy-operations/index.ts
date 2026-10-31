@@ -194,7 +194,11 @@ Deno.serve(async (request: Request) => {
         p_source: source, p_ip_hash: null, p_user_agent_hash: null
       });
       if (error) throw error;
-      return json({ accepted: true, acceptanceId: data, acceptedAt: new Date().toISOString(), documentSha256: hash }, 200, allowedOrigin);
+      const { data: acceptance, error: acceptanceReadError } = await admin.from("legal_acceptances")
+        .select("accepted_at,document_sha256,acceptance_context").eq("id", data).eq("user_id", actorId).single();
+      if (acceptanceReadError) throw acceptanceReadError;
+      return json({ accepted: true, acceptanceId: data, acceptedAt: acceptance.accepted_at,
+        documentSha256: acceptance.document_sha256, context: acceptance.acceptance_context }, 200, allowedOrigin);
     }
 
     if (action === "create-privacy-request") {
@@ -333,8 +337,12 @@ Deno.serve(async (request: Request) => {
         .select("id,document_type,version,title,content_uri,sha256,content_markdown,review_status,requires_acceptance,reacceptance_required,review_notes")
         .eq("id", id).eq("is_published", false).maybeSingle();
       if (error || !doc) throw new Error("legal_draft_not_found");
+      const { data: revisions, error: revisionError } = await admin.from("legal_document_revisions")
+        .select("revision_number,sha256,changed_by,change_note,created_at")
+        .eq("legal_document_id", id).order("revision_number", { ascending: false }).limit(50);
+      if (revisionError) throw revisionError;
       await logSensitive("legal_document_draft", "legal_documents", id, null, "Read unpublished legal policy draft");
-      return json({ document: doc }, 200, allowedOrigin);
+      return json({ document: doc, revisions: revisions ?? [] }, 200, allowedOrigin);
     }
 
     if (action === "legal-save-draft") {
