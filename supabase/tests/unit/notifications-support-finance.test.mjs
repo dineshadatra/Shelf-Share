@@ -39,7 +39,7 @@ test("SMS rendering requires every variable to be pre-approved in the DLT policy
   ), /sms_template_variable_not_preapproved/u);
   assert.throws(() => renderApprovedSmsTemplate(
     "ShelfShare: code {{code}}.",
-    { code: "1234" }, [{ key: "code", type: "reference" }]
+    { code: "<1234>" }, [{ key: "code", type: "reference" }]
   ), /sms_template_variable_unsafe/u);
 });
 
