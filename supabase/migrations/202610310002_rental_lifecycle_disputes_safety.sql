@@ -748,9 +748,12 @@ begin
   if v_booking.status not in ('return_pending','completed','disputed','active') then
     raise exception 'Claims are available only during return, after return, or for an overdue/lost rental';
   end if;
-  if p_claim_category in ('minor_damage','major_damage','missing_pages','water_damage','wrong_book_returned')
+  if p_claim_category in ('minor_damage','major_damage','missing_pages','water_damage','wrong_book_returned','lost_book','non_return')
     and not exists(select 1 from public.rental_condition_photos p where p.booking_id=p_booking_id and p.evidence_kind='collection')
-  then raise exception 'Initial collection-condition evidence is required before a damage claim'; end if;
+  then raise exception 'Initial collection-condition evidence is required before a damage/loss claim'; end if;
+  if p_claim_category in ('minor_damage','major_damage','missing_pages','water_damage','wrong_book_returned')
+    and not exists(select 1 from public.rental_condition_photos p where p.booking_id=p_booking_id and p.evidence_kind='return')
+  then raise exception 'Return-condition evidence is required before a damage/wrong-book claim'; end if;
   select * into v_cfg from public.rental_operation_policy where id=true;
   if p_claim_category in ('non_return','lost_book')
     and (v_booking.rental_due_at is null or now()<=v_booking.rental_due_at+make_interval(hours=>coalesce(v_cfg.grace_period_hours,24))) then
@@ -832,6 +835,7 @@ begin
   end if;
   select * into v_claim from public.rental_damage_claims where id=p_claim_id for update;
   if not found or v_claim.status not in ('submitted','awaiting_response','under_review') then raise exception 'Claim is not awaiting decision'; end if;
+  if v_actor in (v_claim.claimant_id,v_claim.respondent_id) then raise exception 'A rental participant cannot adjudicate their own claim'; end if;
   if p_approved_compensation_paise>v_claim.requested_compensation_paise then raise exception 'Decision cannot exceed the amount requested';
   end if;
   select * into v_booking from public.bookings where id=v_claim.booking_id;
@@ -886,6 +890,12 @@ begin
   if now()>v_decided_at+make_interval(hours=>coalesce(v_cfg.appeal_window_hours,72)) then raise exception 'Appeal window has expired'; end if;
   insert into public.rental_appeals(case_type,case_id,booking_id,appellant_id,grounds)
   values(p_case_type,p_case_id,v_booking,v_user,left(p_grounds,4000)) returning id into v_id;
+  if p_case_type='claim' then
+    update public.rental_damage_claims set status='appealed' where id=p_case_id;
+    update public.disputes set status='appealed' where id=(select dispute_id from public.rental_damage_claims where id=p_case_id);
+  else
+    update public.disputes set status='appealed' where id=p_case_id;
+  end if;
   insert into public.rental_operations_events(booking_id,actor_id,event_type,details,idempotency_key)
   values(v_booking,v_user,'appeal_submitted',jsonb_build_object('appeal_id',v_id,'case_type',p_case_type,'case_id',p_case_id),
     'rental-appeal:'||v_id::text);
@@ -1220,15 +1230,21 @@ create or replace function public.register_rental_case_evidence(
 ) returns uuid language plpgsql security definer
 set search_path = pg_catalog,public
 as $$
-declare v_booking uuid; v_reader uuid; v_owner uuid; v_id uuid; v_reporter uuid;
+declare v_booking uuid; v_reader uuid; v_owner uuid; v_id uuid; v_case_status text;
 begin
   if coalesce(current_setting('role',true),'')<>'service_role' then raise exception 'Trusted evidence service required'; end if;
   if p_case_type not in ('claim','dispute') or p_sha256 !~ '^[a-f0-9]{64}$'
     or length(btrim(coalesce(p_evidence_type,'')))<3 then raise exception 'Invalid evidence metadata'; end if;
   if p_case_type='claim' then
-    select booking_id into v_booking from public.rental_damage_claims where id=p_case_id;
+    select booking_id,status into v_booking,v_case_status from public.rental_damage_claims where id=p_case_id;
+    if v_case_status not in ('submitted','awaiting_response','under_review','appealed') then
+      raise exception 'Claim is not open for new evidence';
+    end if;
   else
-    select booking_id into v_booking from public.disputes where id=p_case_id;
+    select booking_id,status::text into v_booking,v_case_status from public.disputes where id=p_case_id;
+    if v_case_status not in ('open','awaiting_reader','awaiting_owner','under_review','appealed') then
+      raise exception 'Dispute is not open for new evidence';
+    end if;
   end if;
   if v_booking is null then raise exception 'Resolution case not found'; end if;
   select reader_id,owner_id into v_reader,v_owner from public.bookings where id=v_booking;
@@ -1266,6 +1282,7 @@ begin
   select * into v_appeal from public.rental_appeals where id=p_appeal_id for update;
   if not found or v_appeal.status not in ('submitted','under_review') then raise exception 'Appeal is not awaiting review'; end if;
   select * into v_booking from public.bookings where id=v_appeal.booking_id;
+  if v_actor in (v_booking.reader_id,v_booking.owner_id) then raise exception 'A rental participant cannot adjudicate their own appeal'; end if;
   if v_appeal.case_type='claim' then
     select * into v_claim from public.rental_damage_claims where id=v_appeal.case_id for update;
     if not found then raise exception 'Original claim not found'; end if;
@@ -1281,11 +1298,16 @@ begin
         decision_by=v_actor,decision_code=left(p_decision_code,100),
         decision_reason=left(p_decision_reason,4000),decided_at=now()
       where id=v_claim.id;
-    elsif p_outcome='upheld' then
+    elsif p_outcome in ('upheld','dismissed') then
       update public.rental_damage_claims set status=case when approved_compensation_paise=0 then 'rejected'
         when approved_compensation_paise=requested_compensation_paise then 'approved' else 'partially_approved' end
       where id=v_claim.id;
     end if;
+  end if;
+  if v_appeal.case_type='claim' then
+    update public.disputes set status='decided' where id=v_claim.dispute_id;
+  else
+    update public.disputes set status='decided' where id=v_appeal.case_id;
   end if;
   update public.rental_appeals set status=p_outcome,reviewer_id=v_actor,
     decision_code=left(p_decision_code,100),decision_reason=left(p_decision_reason,4000),decided_at=now()
@@ -1321,6 +1343,7 @@ begin
     or length(btrim(coalesce(p_resolution_reason,'')))<20 then raise exception 'Reasoned safety case outcome is required'; end if;
   select * into v_report from public.rental_safety_reports where id=p_report_id for update;
   if not found then raise exception 'Safety report not found'; end if;
+  if v_actor in (v_report.reporter_id,v_report.reported_user_id) then raise exception 'A report participant cannot resolve their own safety report'; end if;
   update public.rental_safety_reports set status=p_status,assigned_to=coalesce(assigned_to,v_actor),
     resolution_code=left(p_resolution_code,100),resolution_reason=left(p_resolution_reason,2000),
     resolved_at=case when p_status in ('actioned','dismissed','closed') then now() else null end
