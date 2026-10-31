@@ -152,3 +152,11 @@ Metrics: search-to-book conversion, booking failure, hold expiry, payment succes
 ## 13. Unresolved decisions
 
 Exact duration semantics (calendar day vs elapsed 24 hours); booking request/payment hold TTL; maximum advance booking horizon; buffer; handover window; no-show grace; reschedule count/cutoff; cancellation tiers; unused-day refund; extension cutoff; return inspection window; overdue grace; late fee; refund SLA; provider fee allocation; payout schedule.
+
+## 14. Implemented backend and deployment notes
+
+The current implementation is on `feat/frontend-foundation`; it is not deployed or merged to `main`. Booking creation uses `request_book_booking`, Owner approval uses `accept_book_booking_request`, and `begin_booking_payment` is service-role-only. The Reader and Owner must each accept the current rental agreement. A provider-confirmed capture webhook is the only source of payment success. Reservation creation, payment holds, participant locks, handover completion and deposit-release checks are server-side.
+
+Collection can be resumed from `collection_pending` after an unconsumed QR expires. The initiating participant may replace an unused QR/OTP; once the other participant consumes the token, rotation is rejected and the initiator must complete their own confirmation. Return is Reader-initiated and completes only after both participants, private return-condition photos and the server-side QR/OTP flow are satisfied.
+
+Owner no-show and Reader no-show produce incident records only. Penalties, cancellation fees, refund percentages, compensation and fee retention remain disabled until the versioned cancellation/no-show matrix is approved. Do not invent a no-show financial outcome.
