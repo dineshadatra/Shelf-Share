@@ -585,10 +585,41 @@ async function loadPrivacyIncidents(){
  target.innerHTML='<div class="empty">Loading incident register…</div>';
  try{
   const data=await invokePrivacy("incident-list"),rows=data.incidents||[];
-  target.innerHTML=rows.length?'<table><thead><tr><th>Reference</th><th>Detected</th><th>Severity</th><th>Status</th><th>Affected subjects (estimate)</th><th>Data categories</th></tr></thead><tbody>'+
-   rows.map(row=>'<tr><td>'+esc(row.incident_reference)+'</td><td>'+esc(fmt(row.detected_at))+'</td><td>'+esc(row.severity)+'</td><td>'+esc(row.status)+'</td><td>'+esc(row.estimated_affected_subjects??"Unknown")+'</td><td>'+esc((row.data_categories||[]).join(", "))+'</td></tr>').join("")+'</tbody></table>':'<div class="empty">No incident records.</div>';
+  target.innerHTML=rows.length?'<table><thead><tr><th>Reference</th><th>Detected</th><th>Severity</th><th>Status</th><th>Affected subjects (estimate)</th><th>Data categories</th><th>Actions</th></tr></thead><tbody>'+
+   rows.map(row=>'<tr><td>'+esc(row.incident_reference)+'</td><td>'+esc(fmt(row.detected_at))+'</td><td>'+esc(row.severity)+'</td><td>'+esc(row.status)+'</td><td>'+esc(row.estimated_affected_subjects??"Unknown")+'</td><td>'+esc((row.data_categories||[]).join(", "))+'</td><td><button class="secondary" data-incident-view="'+esc(row.id)+'">Review</button></td></tr>').join("")+'</tbody></table><div id="privacyIncidentDetail"></div>':'<div class="empty">No incident records.</div>';
+  target.querySelectorAll("[data-incident-view]").forEach(button=>button.addEventListener("click",()=>reviewPrivacyIncident(button.dataset.incidentView)));
  }catch(error){target.innerHTML='<div class="empty">'+esc(error.message||"Unable to load incidents.")+'</div>';}
 }
+
+async function reviewPrivacyIncident(incidentId){
+ const panel=el("privacyIncidentDetail");if(!panel)return;
+ panel.innerHTML='<div class="card">Loading incident and audit history…</div>';
+ try{
+  await ensureAal2();
+  const data=await invokePrivacy("incident-detail",{incidentId}),incident=data.incident,events=data.events||[];
+  panel.innerHTML='<div class="card"><h3>'+esc(incident.incident_reference)+' · '+esc(incident.severity)+' · '+esc(incident.status)+'</h3>'+
+   '<p>'+esc(incident.factual_summary)+'</p><p><strong>Containment:</strong> '+esc(incident.containment_actions||"Not recorded")+'</p>'+
+   '<p><strong>Risk assessment:</strong> '+esc(incident.risk_assessment||"Not recorded")+'</p>'+
+   '<p><strong>Notification assessment:</strong> '+esc(incident.notification_assessment||"Not recorded")+'</p>'+
+   '<h4>Append-only incident history</h4><div class="support-history">'+events.map(item=>'<p><strong>'+esc(item.event_type)+'</strong> · '+esc(fmt(item.created_at))+' · '+esc(item.reason)+' · '+esc((item.changed_fields||[]).join(", "))+'</p>').join("")+'</div>'+
+   '<button id="updateIncident" class="primary">Update incident</button></div>';
+  el("updateIncident").addEventListener("click",()=>updatePrivacyIncident(incident));
+ }catch(error){panel.innerHTML='<div class="card">'+esc(error.message||"Unable to load incident.")+'</div>';}
+}
+async function updatePrivacyIncident(incident){
+ askReason("Update breach incident","Record factual containment, risk assessment, notification decisions and remediation. Do not mark a notice sent unless it was actually sent.",async reason=>{
+  await ensureAal2();
+  const status=prompt("Status: detected, triage, contained, investigating, notified, remediating, closed",incident.status);
+  if(!status)return;
+  const containment_actions=prompt("Containment actions (blank to retain)",incident.containment_actions||"");
+  const risk_assessment=prompt("Risk assessment (blank to retain)",incident.risk_assessment||"");
+  const notification_assessment=prompt("Notification assessment (blank to retain)",incident.notification_assessment||"");
+  await invokePrivacy("incident-update",{incidentId:incident.id,status,containment_actions,risk_assessment,notification_assessment,reason});
+  await loadPrivacyIncidents();
+  await reviewPrivacyIncident(incident.id);
+ });
+}
+
 async function createPrivacyIncident(){
  askReason("Record a privacy/security incident","Record known facts only. Do not speculate about impact. Incident reference format: INC- followed by an uppercase unique identifier.",async containment=>{
   await ensureAal2();
