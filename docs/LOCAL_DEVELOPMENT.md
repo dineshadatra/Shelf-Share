@@ -1,9 +1,9 @@
-# Local Development — Booking / Payments / QR
+# Local Development — Booking / Payments / Rental Operations / QR
 
 ## Requirements
 
 - Git for Windows.
-- Node.js 22 or newer (unit tests use Node's built-in test runner and type stripping).
+- Node.js 22.6 or newer (unit tests use Node's built-in test runner and type stripping).
 - Supabase CLI for local database and Edge Function testing.
 - Deno is recommended for deno fmt, deno lint and deno check.
 
@@ -53,6 +53,15 @@ supabase functions deploy handover-evidence
 supabase functions deploy request-deposit-release
 supabase functions deploy request-owner-settlement
 supabase functions deploy request-finance-refund
+supabase functions deploy rental-operations
+supabase functions deploy case-evidence
+supabase functions deploy rental-due-sweep
 ```
 
-Do not deploy secrets or turn on provider approval flags until the provider contract, legal opinion and accounting configuration have been approved.
+## Rental operations scheduler
+
+Add a random RENTAL_SWEEP_SECRET of at least 32 bytes to the Edge Function secrets. Deploy rental-due-sweep with JWT verification disabled only because it authenticates using the private x-rental-sweep-secret header. Invoke it from a trusted scheduler on a regular cadence. Do not expose the secret to the browser. The sweep queues in-app reminders and proposed fees only; it never collects or deducts money.
+
+Review docs/RENTAL_LIFECYCLE_DISPUTES_SAFETY.md before activating the policy row. The row is inserted inactive. Paid extensions remain pending until an approved extension pricing/payment adapter exists. Late fees remain proposals until legal/accounting approvals and customer-facing terms are configured.
+
+Do not turn on provider approval flags until provider contract, legal opinion and accounting configuration have been approved.

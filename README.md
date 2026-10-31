@@ -4,18 +4,18 @@ This repository contains ShelfShare's PostgreSQL/Supabase schema, business rules
 
 ## Repository contents
 
-- `docs/` — architecture, product rules, privacy/security, India compliance dependencies, database design and operations.
+- `docs/` — architecture, product rules, privacy/security, India compliance dependencies, database design, rental lifecycle/dispute/safety policies and operations.
 - `supabase/migrations/` — ordered PostgreSQL/Supabase migrations.
-- `supabase/functions/` — Edge Functions for payment initiation/webhooks, QR/OTP handover, private condition evidence, owner settlement requests, deposit release requests and finance refund requests.
-- `supabase/tests/unit/` — runnable Node.js unit tests for financial and handover invariants.
+- `supabase/functions/` — Edge Functions for payment initiation/webhooks, QR/OTP handover, private evidence, rental lifecycle operations, dispute evidence, due reminders, owner settlement requests, deposit release requests and finance refund requests.
+- `supabase/tests/unit/` — runnable Node.js unit tests for financial, handover and rental-operations invariants.
 - `supabase/tests/INTEGRATION_TEST_MATRIX.md` — database/provider sandbox test scenarios.
 
 ## Local setup
 
-Requirements: Git, Node.js 22+, Supabase CLI. Deno is recommended for Edge Function format/check/lint.
+Requirements: Git, Node.js 22.6+, Supabase CLI. Deno is recommended for Edge Function format/check/lint.
 
 ```powershell
-git clone https://github.com/dineshadatra/Shelf-Share.git
+git clone --branch feature/booking-payment-deposit-qr https://github.com/dineshadatra/Shelf-Share.git
 cd Shelf-Share
 npm run test:unit
 supabase start
@@ -25,6 +25,12 @@ supabase test db
 ```
 
 See [Local Development](docs/LOCAL_DEVELOPMENT.md) for Edge Function serving and deployment commands.
+
+## Rental operations and customer safety
+
+The rental operations layer adds a participant-scoped active-rental dashboard, due/overdue projection, grace-period reminders, controlled extension and rescheduling workflows, early return, cancellation/refund review, no-show incident reporting, evidence-backed damage claims, dispute messages, appeals, user/listing/unsafe-handover reports, block/mute controls and auditable account restrictions. The policy row is inactive by default. Proposed defaults (24-hour grace, reminders at 72/24/0 hours, 48-hour claim response and 72-hour appeal window) must be reviewed and approved before activation.
+
+Late fees are written as `proposed` records only; the scheduler reports `late_fees_charged: 0`. No claim or appeal decision deducts from a deposit or payment method. Paid extensions stay pending until a provider-approved extension pricing/payment route is implemented. Read [Rental Lifecycle, Disputes and Safety](docs/RENTAL_LIFECYCLE_DISPUTES_SAFETY.md) for detailed customer policies and evidence standards.
 
 ## Financial safety and provider approval
 
@@ -50,4 +56,3 @@ Never mark payment, refund, deposit release or owner payout successful from a br
 ## Important limits
 
 The Edge Functions are backend scaffolding over the existing SQL RPCs. They do not select a payment vendor, confer regulatory approval, provide a legal opinion, or make the app production-ready. The repository does not include the frontend product application. Run every migration in a disposable Supabase project and complete the database race, webhook, refund, payout, chargeback, storage, RLS and restore tests before production.
-
