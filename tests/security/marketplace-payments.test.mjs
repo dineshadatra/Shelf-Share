@@ -310,7 +310,10 @@ test("every enabled marketplace provider must support idempotent calls", () => {
   assert.match(providerGate, /check \(not enabled_for_rent or supports_idempotency\)/);
   assert.match(adapter, /idempotencyKey/);
   assert.match(adapter, /No provider is registered until written product-level approval is obtained/);
-  assert.match(api, /No approved and deployed adapter is registered|provider adapter is detest("deposit release is serialized against new bookings, return closure and payout creation", () => {
+  assert.match(api, /No approved and deployed adapter is registered|provider adapter is deployed/);
+});
+
+test("deposit release is serialized against new bookings, return closure and payout creation", () => {
   assert.match(serialization, /private\.lock_marketplace_members/);
   assert.match(serialization, /order by p\.id\s+for update/);
   const request = functionBody(serialization, "public.request_book_booking(");
@@ -329,9 +332,6 @@ test("every enabled marketplace provider must support idempotent calls", () => {
   assert.match(payout, /lock_marketplace_members/);
   assert.match(payout, /public\.disputes/);
   assert.match(payout, /payment_disputes/);
-});
-
-ployed/);
 });
 
 test("marketplace edge endpoints are deployed without gateway JWT enforcement because handlers validate credentials", () => {
