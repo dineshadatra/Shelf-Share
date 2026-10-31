@@ -38,8 +38,8 @@ test("SMS rendering requires every variable to be pre-approved in the DLT policy
     { unexpected: "x" }, []
   ), /sms_template_variable_not_preapproved/u);
   assert.throws(() => renderApprovedSmsTemplate(
-    "ShelfShare: code {{code}}.",
-    { code: "<1234>" }, [{ key: "code", type: "reference" }]
+    "ShelfShare: code {{ref}}.",
+    { ref: "<1234>" }, [{ key: "ref", type: "reference" }]
   ), /sms_template_variable_unsafe/u);
 });
 
@@ -76,4 +76,12 @@ test("migration contains restricted delivery, consent, support SLA and finance g
   assert.match(migration, /finance\.analytics\.read/u);
   assert.match(migration, /get_admin_financial_analytics/u);
   assert.match(migration, /Step-up MFA AAL2/u);
+  const hardening = await readFile(new URL("../../migrations/202610310009_operations_hardening.sql", import.meta.url), "utf8");
+  const controls = await readFile(new URL("../../migrations/202610310010_operations_controls.sql", import.meta.url), "utf8");
+  const contentAndCoverage = await readFile(new URL("../../migrations/202610310011_notification_content_and_event_coverage.sql", import.meta.url), "utf8");
+  const backfill = await readFile(new URL("../../migrations/202610310012_notification_backfill_and_resubmission.sql", import.meta.url), "utf8");
+  assert.match(hardening, /notification_delivery_job_sendable/u);
+  assert.match(controls, /reverse_financial_cost_entry/u);
+  assert.match(contentAndCoverage, /collection_pending/u);
+  assert.match(backfill, /verification-submitted-reviewer/u);
 });
