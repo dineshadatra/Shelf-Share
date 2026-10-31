@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://esm.sh; style-src 'self'; connect-src 'self' https://*.supabase.co wss://*.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self'">
+<title>ShelfShare Admin</title>
+<link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main id="auth" class="auth-shell">
+  <section class="auth-card">
+    <p class="eyebrow">SHELFSHARE / BUSINESS OPERATIONS</p>
+    <h1>Admin console</h1>
+    <p class="muted">Staff access only. Sign in with your verified phone number. Sensitive operations require a verified authenticator and are recorded in the admin activity log.</p>
+    <label>Supabase project URL<input id="projectUrl" type="url" placeholder="https://your-project.supabase.co" autocomplete="url"></label>
+    <label>Supabase anon key<input id="anonKey" type="password" placeholder="Public anon key" autocomplete="off"></label>
+    <label>Staff phone number<input id="phone" type="tel" placeholder="+91XXXXXXXXXX" autocomplete="tel"></label>
+    <button id="sendOtp" class="primary">Send sign-in code</button>
+    <label id="otpWrap" hidden>SMS verification code<input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="8"></label>
+    <button id="verifyOtp" hidden class="primary">Verify and sign in</button>
+    <p id="authMessage" class="message" role="status"></p>
+    <p class="fine">Use an existing staff account. New account creation is disabled. Credentials and tokens remain in page memory for this session.</p>
+  </section>
+</main>
+<div id="app" class="app-shell" hidden>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">S</span><span><strong>ShelfShare</strong><small>ADMIN CONSOLE</small></span></div>
+    <div id="roleBadges" class="role-badges"></div>
+    <nav id="navigation" aria-label="Admin modules"></nav>
+    <button id="logout" class="logout">Sign out</button>
+  </aside>
+  <section class="workspace">
+    <header class="topbar">
+      <div><p class="eyebrow">BUSINESS OPERATIONS</p><h1 id="pageTitle">Dashboard</h1></div>
+      <div id="staffIdentity" class="staff-identity"></div>
+    </header>
+    <div id="content" class="content"></div>
+  </section>
+</div>
+<dialog id="reasonDialog">
+  <form method="dialog" id="reasonForm">
+    <p class="eyebrow">AUDITED ADMIN ACTION</p>
+    <h2 id="reasonTitle">Confirm action</h2>
+    <p id="reasonDescription" class="muted"></p>
+    <label>Reason (minimum 20 characters)<textarea id="reasonText" minlength="20" maxlength="2000" required></textarea></label>
+    <div class="dialog-actions"><button value="cancel" class="secondary">Cancel</button><button value="confirm" class="primary">Continue</button></div>
+  </form>
+</dialog>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

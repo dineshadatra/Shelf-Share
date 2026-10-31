@@ -48,3 +48,6 @@ verify_jwt = true
 
 [functions.rental-due-sweep]
 verify_jwt = false
+
+[functions.admin-portal]
+verify_jwt = true
