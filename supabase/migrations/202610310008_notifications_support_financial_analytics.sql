@@ -71,7 +71,7 @@ insert into public.notification_templates(template_key,category,in_app_title,in_
 ('refund.updated','service','Refund update','There is an update to your refund.'),
 ('payout.updated','service','Payout update','There is an update to your owner payout.'),
 ('referral.rewarded','service','Referral reward','A referral reward has been issued to your account.'),
-('community.activity','marketing','Community activity','There is new activity on a community post you follow.'),
+('community.activity','marketing','Community activity','There is new activity on your community post.'),
 ('grievance.updated','service','Support ticket update','There is an update to your ShelfShare support ticket.')
 on conflict(template_key) do nothing;
 
@@ -405,8 +405,8 @@ begin
       and ((t.category='service' and pref.sms_service_enabled)
         or (t.category='marketing' and pref.sms_marketing_enabled))
     order by j.available_at,j.created_at
-    for update of j skip locked
     limit p_limit
+    for update of j skip locked
   loop
     update public.notification_delivery_jobs j
       set status='processing',claimed_at=now(),attempts=j.attempts+1,updated_at=now()
@@ -688,7 +688,7 @@ as $$
 declare v_author uuid;
 begin
   select author_id into v_author from public.community_posts where id=new.post_id and status='published';
-  if v_author is not null and v_author<>new.author_id then
+  if new.status='published' and v_author is not null and v_author<>new.author_id then
     perform private.enqueue_notification_event(v_author,'community.activity',new.post_id,
       jsonb_build_object('post_id',new.post_id,'activity_type','comment'),
       'community-comment:'||new.id::text||':'||v_author::text);
