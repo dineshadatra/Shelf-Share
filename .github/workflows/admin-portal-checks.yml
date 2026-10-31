@@ -1,0 +1,31 @@
+name: ShelfShare admin portal checks
+
+on:
+  push:
+    branches:
+      - feature/booking-payment-deposit-qr
+  pull_request:
+    branches:
+      - feature/booking-payment-deposit-qr
+
+permissions:
+  contents: read
+
+jobs:
+  unit-and-syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run unit tests
+        run: npm run test:unit
+      - name: Check admin TypeScript syntax
+        run: |
+          node --experimental-strip-types --check supabase/functions/_shared/admin.ts
+          node --experimental-strip-types --check supabase/functions/admin-portal/index.ts
+      - name: Check browser JavaScript syntax
+        run: node --check admin/app.js
