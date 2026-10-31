@@ -5,6 +5,8 @@ create extension if not exists pgcrypto with schema extensions;
 -- Versioned policy text is stored with its hash. Published content is immutable.
 alter table public.legal_documents
   add column if not exists content_markdown text,
+  add column if not exists counsel_reviewed_by uuid references auth.users(id) on delete restrict,
+  add column if not exists counsel_reviewer_name text,
   add column if not exists review_status text not null default 'draft',
   add column if not exists created_by uuid references auth.users(id) on delete restrict,
   add column if not exists updated_by uuid references auth.users(id) on delete restrict,
@@ -452,6 +454,40 @@ $$;
 revoke all on function public.admin_submit_legal_draft(uuid,text) from public,anon;
 grant execute on function public.admin_submit_legal_draft(uuid,text) to authenticated;
 
+
+create or replace function public.admin_record_legal_counsel_review(
+  p_document_id uuid,p_counsel_name text,p_review_reference text,p_reviewed_at timestamptz,p_reason text
+) returns void language plpgsql security definer
+set search_path=pg_catalog,public,private
+as $
+declare v_actor uuid:=auth.uid();
+begin
+  if v_actor is null or coalesce(auth.jwt()->>'aal','aal1')<>'aal2'
+    or not private.admin_can(v_actor,'legal.publish.request') then
+    raise exception 'Legal review recording permission and MFA AAL2 required';
+  end if;
+  if length(btrim(coalesce(p_counsel_name,''))) not between 3 and 160
+    or length(btrim(coalesce(p_review_reference,''))) not between 3 and 200
+    or p_reviewed_at is null or p_reviewed_at>now()
+    or length(btrim(coalesce(p_reason,''))) not between 20 and 2000 then
+    raise exception 'Counsel review name, reference, valid date and reason are required';
+  end if;
+  update public.legal_documents set
+    counsel_reviewed_by=v_actor,counsel_reviewer_name=left(p_counsel_name,160),
+    counsel_review_reference=left(p_review_reference,200),counsel_reviewed_at=p_reviewed_at,
+    updated_by=v_actor,updated_at=now()
+  where id=p_document_id and review_status='in_review' and not is_published;
+  if not found then raise exception 'Legal document must be in review before counsel review can be recorded'; end if;
+  insert into public.admin_activity_events(actor_id,action,module_key,permission_key,target_table,target_id,
+    outcome,reason,request_id,metadata)
+  values(v_actor,'legal_counsel_review_recorded','legal','legal.publish.request','legal_documents',p_document_id::text,
+    'success',left(p_reason,500),gen_random_uuid()::text,
+    jsonb_build_object('counsel_name',left(p_counsel_name,160),'review_reference',left(p_review_reference,200),'reviewed_at',p_reviewed_at));
+end;
+$;
+revoke all on function public.admin_record_legal_counsel_review(uuid,text,text,timestamptz,text) from public,anon;
+grant execute on function public.admin_record_legal_counsel_review(uuid,text,text,timestamptz,text) to authenticated;
+
 create or replace function public.admin_publish_legal_document(
   p_document_id uuid,p_approval_request_id uuid,p_effective_from timestamptz
 ) returns void language plpgsql security definer
@@ -465,10 +501,12 @@ begin
   select * into v_approval from public.admin_approval_requests where id=p_approval_request_id for update;
   if not found or v_doc.id is null or v_approval.id is null or v_approval.action_key<>'legal.publish'
     or v_approval.target_id<>p_document_id::text or v_approval.status<>'approved'
-    or v_approval.requested_by=v_approval.approved_by or v_approval.approved_by=v_actor then
+    or v_approval.requested_by=v_approval.approved_by then
     raise exception 'A separate, approved legal publication request is required';
   end if;
   if v_doc.is_published or v_doc.review_status<>'in_review' or v_doc.content_markdown is null
+    or v_doc.counsel_reviewed_at is null or v_doc.counsel_reviewed_by is null
+    or v_doc.counsel_reviewer_name is null or v_doc.counsel_review_reference is null
     or v_doc.sha256<>encode(extensions.digest(convert_to(v_doc.content_markdown,'UTF8'),'sha256'),'hex')
     or p_effective_from is null or p_effective_from<now() then
     raise exception 'Document is not publishable or its content hash is invalid';
@@ -690,7 +728,10 @@ begin
   end if;
   select * into v_request from public.privacy_requests
     where id=v_approval.target_id::uuid and request_type='erasure' for update;
-  if not found or v_request.status not in ('received','identity_check','in_progress') then raise exception 'Erasure request is not eligible'; end if;
+  if not found or v_request.status not in ('received','identity_check','in_progress')
+    or v_request.identity_verified_at is null then
+    raise exception 'Erasure request requires a verified requester and an active case';
+  end if;
   if v_request.legal_hold or exists(select 1 from public.privacy_legal_holds where subject_user_id=v_request.requester_id and released_at is null) then
     raise exception 'Erasure is blocked by a legal hold';
   end if;
@@ -786,6 +827,14 @@ $$;
 revoke all on function public.complete_privacy_erasure_job(uuid,boolean,text) from public,anon,authenticated;
 grant execute on function public.complete_privacy_erasure_job(uuid,boolean,text) to service_role;
 
+
+create or replace function private.reject_legal_revision_mutation()
+returns trigger language plpgsql set search_path=pg_catalog
+as $ begin raise exception 'Legal document revision history is append-only'; end; $;
+create trigger legal_document_revisions_append_only
+before update or delete on public.legal_document_revisions
+for each row execute function private.reject_legal_revision_mutation();
+
 -- Append-only histories.
 create or replace function private.reject_privacy_history_mutation()
 returns trigger language plpgsql set search_path=pg_catalog
@@ -837,6 +886,10 @@ alter table public.privacy_erasure_job_events enable row level security;
 alter table public.legal_documents enable row level security;
 alter table public.legal_acceptances enable row level security;
 alter table public.legal_document_revisions enable row level security;
+
+revoke all on public.legal_documents,public.legal_acceptances from anon,authenticated;
+grant select on public.legal_documents to anon,authenticated;
+grant select on public.legal_acceptances to authenticated;
 
 revoke all on public.privacy_requests,public.privacy_request_events,public.privacy_consent_events,
   public.privacy_breach_incidents,public.data_retention_policies,public.data_retention_runs,
