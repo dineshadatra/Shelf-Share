@@ -2,7 +2,7 @@
 
 ## Scope and release posture
 
-This increment adds an event log and delivery outbox to the existing notifications table, user-controlled in-app/SMS preferences, a staff-operated support workflow using the existing grievance ticket records, and an MFA-gated finance analytics/report endpoint. The existing staff console now includes support queue/conversation management and financial analytics/CSV screens. The repository still has no consumer-facing product UI for end-user notification preferences, ticket creation or ticket replies; those features are exposed through customer-operations for the consumer app to integrate.
+This increment adds an event log and delivery outbox to the existing notifications table, user-controlled in-app/SMS preferences, a staff-operated support workflow using the existing grievance ticket records, and an MFA-gated finance analytics/report endpoint. The existing staff console now includes support queue/conversation management and financial analytics/CSV screens, including a finance-cost entry form for verified operating expenses. The repository still has no consumer-facing product UI for end-user notification preferences, ticket creation or ticket replies; those features are exposed through customer-operations for the consumer app to integrate.
 
 The initial SMS configuration is intentionally disabled. No provider credentials, DLT sender registration, DLT content templates or telemarketer chain were supplied for this environment. No SMS should be sent until the registration and provider-specific integration steps below are completed.
 
@@ -122,7 +122,7 @@ All values are integer paise unless a field is a percentage/count/date. Date bou
 - Active books now: current physical copies whose listing is approved and available for rent, independent of the selected historical period.
 - Locality performance: paid bookings and gross rental transaction value grouped by the locality of the physical copy.
 
-Finance cost entries use record_financial_cost, require finance.costs.write and MFA AAL2, and retain source reference/reason/idempotency metadata. Cost rows are immutable; use reverse_financial_cost_entry to create one evidenced, audited reversal rather than editing history. Populate gateway, verification, referral and support costs from actual invoices/receipts/approved accounting feeds. Do not invent or estimate amounts to make a dashboard appear complete.
+Finance cost entries can be recorded from the staff console finance screen or through record_financial_cost. Both require finance.costs.write and MFA AAL2 and retain source reference/reason/idempotency metadata. The screen accepts category, INR amount, IST expense date, vendor, source type/reference and evidence description. Cost rows are immutable; use reverse_financial_cost_entry to create one evidenced, audited reversal rather than editing history. Populate gateway, verification, referral and support costs from actual invoices/receipts/approved accounting feeds. Do not invent or estimate amounts to make a dashboard appear complete.
 
 ## Deployment checklist
 
