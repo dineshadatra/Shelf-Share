@@ -45,4 +45,4 @@ Required additional secrets:
 
 India SMS remains fail-closed. Register ShelfShare as a Principal Entity, obtain the required header/content template IDs and telemarketer-chain information, pre-tag variable fields, and configure DLT values before enabling any SMS template. The SMS endpoint contract is generic; add a provider-specific adapter and sandbox-test it. Auth OTP remains under Supabase Auth and must use its separately approved OTP template. Email and push are not enabled by this release.
 
-Apply migrations 202610310008_notifications_support_financial_analytics.sql, 202610310009_operations_hardening.sql and 202610310010_operations_controls.sql after the admin RBAC/security migrations. See docs/NOTIFICATIONS_SUPPORT_FINANCIAL_ANALYTICS.md for deployment order, DLT release gates, SLA defaults, metric definitions and limitations.
+Apply migrations 202610310008 through 202610310012 operations migrations after the admin RBAC/security migrations. See docs/NOTIFICATIONS_SUPPORT_FINANCIAL_ANALYTICS.md for deployment order, DLT release gates, SLA defaults, metric definitions and limitations.
