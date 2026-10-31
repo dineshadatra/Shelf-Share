@@ -66,7 +66,7 @@ async function selectModule(key){
  else await loadModule();
 }
 async function renderDashboard(){
- el("content").innerHTML='<div class="notice"><strong>Operational snapshot</strong>Counts are permission-filtered and are not financial statements. Payment counts do not indicate collected or settled money.</div><div id="dashboardCards" class="cards"><div class="card">Loading dashboard…</div></div><div class="section-heading"><div><h2>Your access</h2><p>Access depends on the role permissions currently assigned to your account.</p></div></div><div class="card"><div class="permission-list">'+[...state.permissions].sort().map(item=>"<span>"+esc(item)+"</span>").join("")+"</div></div>';
+ el("content").innerHTML='<div class="notice"><strong>Operational snapshot</strong>Counts are permission-filtered and are not financial statements. Payment counts do not indicate collected or settled money.</div><div id="dashboardCards" class="cards"><div class="card">Loading dashboard…</div></div><div class="section-heading"><div><h2>Your access</h2><p>Access depends on the role permissions currently assigned to your account.</p></div></div><div class="card"><div class="permission-list">'+[...state.permissions].sort().map(item=>"<span>"+esc(item)+"</span>").join("")+"</div></div>";
  try{
   const data=await invoke("dashboard");
   const labels={users:"User accounts",physicalCopies:"Physical copies",booksAwaitingModeration:"Books awaiting moderation",verificationsAwaitingReview:"Verifications awaiting review",activeBookings:"Active bookings",openDisputes:"Open disputes",openGrievances:"Open grievances",openRiskAlerts:"Open risk alerts",paymentRecords:"Payment records"};
